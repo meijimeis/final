@@ -136,13 +136,9 @@ function MapViewportController({ center }: { center: [number, number] }) {
 function buildRiderIcon() {
   return L.divIcon({
     className: "",
-    html: `
-      <div class="rider-icon-wrapper">
-        <img src="/images/scooter.png" class="rider-icon"/>
-      </div>
-    `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
+    html: '<div class="leaflet-rider-marker"></div>',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
   });
 }
 
@@ -277,16 +273,13 @@ export function LeafletMapContent({
       </MapContainer>
 
       <style jsx global>{`
-        .rider-icon-wrapper {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .rider-icon {
-          width: 35px;
-          height: 35px;
-          object-fit: contain;
+        .leaflet-rider-marker {
+          width: 18px;
+          height: 18px;
+          background: #7659f5;
+          border-radius: 50%;
+          border: 2px solid #ffffff;
+          box-shadow: 0 2px 5px rgba(17, 24, 39, 0.28);
         }
 
         .leaflet-parcel-marker-dot {
