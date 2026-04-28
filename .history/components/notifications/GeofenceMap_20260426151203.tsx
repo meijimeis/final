@@ -6,9 +6,6 @@ import {
   ParcelGeofenceOverlay,
   RoutePolylineOverlay,
 } from "./types";
-import { useEffect, useState } from "react";
-import { SIMULATED_RIDERS, SimulatedRider } from "./simulateRider";
-import { moveRider } from "./simulateMovement";
 
 const GeofenceMapContent = dynamic(
   () =>
@@ -38,24 +35,12 @@ export default function GeofenceMap({
   routePolylines = [],
   zoneWarningById,
 }: GeofenceMapProps) {
-  // ✅ MOVE HOOKS INSIDE COMPONENT
-  const [riders, setRiders] = useState<SimulatedRider[]>(SIMULATED_RIDERS);
-
-  useEffect(() => {
-    const interval = setInterval(() => {
-      setRiders((prev) => prev.map((r) => moveRider(r)));
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, []);
-
   return (
     <GeofenceMapContent
       zones={zones}
       parcelGeofences={parcelGeofences}
       routePolylines={routePolylines}
       zoneWarningById={zoneWarningById}
-      riders={riders} // ✅ USE STATE, NOT STATIC
     />
   );
 }
