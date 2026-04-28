@@ -153,13 +153,9 @@ function deriveWaypointIndexesFromGeometry(
 function createRiderIcon() {
   return L.divIcon({
     className: "",
-    html: `
-      <div class="plan-route-rider-wrapper">
-        <img src="/images/scooter.png" class="plan-route-rider-img"/>
-      </div>
-    `,
-    iconSize: [40, 40],
-    iconAnchor: [20, 20],
+    html: '<div class="plan-route-rider-icon"></div>',
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
   });
 }
 
@@ -196,25 +192,6 @@ function FitBoundsToPoints({ points }: { points: [number, number][] }) {
       animate: false,
     });
   }, [map, points]);
-
-  return null;
-}
-
-function FocusSelectedRider({
-  rider,
-}: {
-  rider: { lat: number | null; lng: number | null } | null;
-}) {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!rider) return;
-    if (typeof rider.lat !== "number" || typeof rider.lng !== "number") return;
-
-    map.setView([rider.lat, rider.lng], 15, {
-      animate: true,
-    });
-  }, [rider, map]);
 
   return null;
 }
@@ -353,20 +330,15 @@ export function PlanRouteMapContent() {
     [overviewRiders]
   );
 
-const fitPoints = useMemo(() => {
-  // PRIORITY: selected rider
-  if (rider && typeof rider.lat === "number" && typeof rider.lng === "number") {
-    return [[rider.lat, rider.lng]];
-  }
+  const fitPoints = useMemo(() => {
+    if (isRouteMode && hasRiderCoordinates(rider)) {
+      const waypointPoints = routeWaypoints.map(([lng, lat]) => [lat, lng] as [number, number]);
+      if (routeLine.length > 1) return routeLine;
+      return waypointPoints;
+    }
 
-  if (isRouteMode && hasRiderCoordinates(rider)) {
-    const waypointPoints = routeWaypoints.map(([lng, lat]) => [lat, lng] as [number, number]);
-    if (routeLine.length > 1) return routeLine;
-    return waypointPoints;
-  }
-
-  return overviewRiderPoints;
-}, [isRouteMode, overviewRiderPoints, rider, routeLine, routeWaypoints]);
+    return overviewRiderPoints;
+  }, [isRouteMode, overviewRiderPoints, rider, routeLine, routeWaypoints]);
 
   useEffect(() => {
     let cancelled = false;
@@ -642,16 +614,13 @@ const fitPoints = useMemo(() => {
           <ZoomControl position="topright" />
           <TrackMapZoom onZoomChange={setMapZoom} />
           <FitBoundsToPoints points={fitPoints} />
-          <FocusSelectedRider rider={rider} />
 
           {isRouteMode && hasRiderCoordinates(rider) ? (
             <>
-             <Marker
-                  position={[rider.lat, rider.lng]}
-                  icon={riderIcon}
-                >
-                  <Popup>Rider: {rider.name ?? "Selected Rider"}</Popup>
-                </Marker>
+              <Marker position={[rider.lat, rider.lng]} icon={startIcon}>
+                <Popup>Start (S): {rider.name || "Unknown"}</Popup>
+              </Marker>
+
               {displayStops.map((stop, index) => (
                 <Marker
                   key={stop.parcel.id}
@@ -755,16 +724,13 @@ const fitPoints = useMemo(() => {
       </div>
 
       <style jsx global>{`
-        .plan-route-rider-wrapper {
-          display: flex;
-          align-items: center;
-          justify-content: center;
-        }
-
-        .plan-route-rider-img {
-          width: 35px;
-          height: 35px;
-          object-fit: contain;
+        .plan-route-rider-icon {
+          width: 18px;
+          height: 18px;
+          border-radius: 50%;
+          background: #7c3aed;
+          border: 2px solid #fff;
+          box-shadow: 0 2px 5px rgba(17, 24, 39, 0.28);
         }
 
         .plan-route-start-icon {
