@@ -139,6 +139,166 @@ function avgNearestNeighborDistance(parcels: Parcel[]) {
   return total / parcels.length;
 }
 
+function totalClusteringCost(groups: Parcel[][]) {
+  let total = 0;
+
+  for (const g of groups) {
+    const spread = clusterSpread(g);
+    const diameter = clusterDiameter(g);
+    const route = approximateRouteLength(g);
+
+    // 🔥 balanced objective
+    total += spread * 0.4 + diameter * 0.3 + route * 0.3;
+  }
+
+  return total;
+}
+
+function approximateRouteLength(group: Parcel[]) {
+  if (group.length <= 1) return 0;
+
+  // Build initial route (nearest neighbor)
+  const visited = new Set<number>();
+  let route: Parcel[] = [];
+
+  let current = Math.floor(Math.random() * group.length); // 🔥 fix bias
+  route.push(group[current]);
+  visited.add(current);
+
+  while (visited.size < group.length) {
+    let nearest = -1;
+    let bestDist = Infinity;
+
+    for (let i = 0; i < group.length; i++) {
+      if (visited.has(i)) continue;
+
+      const d = distanceKm(
+        group[current].latitude,
+        group[current].longitude,
+        group[i].latitude,
+        group[i].longitude
+      );
+
+      if (d < bestDist) {
+        bestDist = d;
+        nearest = i;
+      }
+    }
+
+    route.push(group[nearest]);
+    visited.add(nearest);
+    current = nearest;
+  }
+
+  // 🔥 NEW: improve route
+  route = twoOpt(route);
+
+  // compute length
+  let total = 0;
+  for (let i = 0; i < route.length - 1; i++) {
+    total += distanceKm(
+      route[i].latitude,
+      route[i].longitude,
+      route[i + 1].latitude,
+      route[i + 1].longitude
+    );
+  }
+
+  return total;
+}
+
+function twoOpt(route: Parcel[]) {
+  let improved = true;
+  let iterations = 0;
+  const MAX_ITER = 50; // 🔥 limit
+
+  while (improved && iterations < MAX_ITER) {
+    iterations++;
+    improved = false;
+
+    for (let i = 1; i < route.length - 2; i++) {
+      for (let j = i + 1; j < route.length - 1; j++) {
+        const A = route[i - 1];
+        const B = route[i];
+        const C = route[j];
+        const D = route[j + 1];
+
+        const currentDist = distanceKm(A.latitude, A.longitude, B.latitude, B.longitude) +
+                           distanceKm(C.latitude, C.longitude, D.latitude, D.longitude);
+
+        const newDist = distanceKm(A.latitude, A.longitude, C.latitude, C.longitude) +
+                       distanceKm(B.latitude, B.longitude, D.latitude, D.longitude);
+
+        if (newDist < currentDist) {
+          const reversed = route.slice(i, j + 1).reverse();
+          route.splice(i, j - i + 1, ...reversed);
+          improved = true;
+        }
+      }
+    }
+  }
+
+  return route;
+}
+
+function refineGroups(
+  groups: Parcel[][],
+  maxWeight: number | "",
+  maxParcels: number | "",
+  maxRadius: number | "",
+  maxIterations = 5
+): Parcel[][] {
+  // 🔥 CACHE ONCE AT TOP (NEW)
+  const allParcels = groups.flat();
+  const baseNeighborDist = avgNearestNeighborDistance(allParcels);
+  const HARD_MAX_DIAMETER = maxRadius !== "" ? maxRadius * 2 : Math.max(4, baseNeighborDist * 4);
+
+  let improved = true;
+  let iteration = 0;
+
+  while (improved && iteration < maxIterations) {
+    improved = false;
+    iteration++;
+
+    for (let i = 0; i < groups.length; i++) {
+      for (let j = 0; j < groups.length; j++) {
+        if (i === j) continue;
+
+        for (let pIndex = 0; pIndex < groups[i].length; pIndex++) {
+          const parcel = groups[i][pIndex];
+          const fromGroup = groups[i];
+          const toGroup = groups[j];
+
+          if (maxWeight !== "" && totalWeight(toGroup) + parcel.weight_kg > maxWeight) continue;
+          if (maxParcels !== "" && toGroup.length + 1 > maxParcels) continue;
+
+          const newFrom = fromGroup.filter((_, idx) => idx !== pIndex);
+          const newTo = [...toGroup, parcel];
+
+          const newDiameter = clusterDiameter(newTo);
+          if (newDiameter > HARD_MAX_DIAMETER) continue;  // FAST NOW!
+
+          const oldCost = clusterSpread(fromGroup) + clusterSpread(toGroup) + 
+                         clusterDiameter(fromGroup) + clusterDiameter(toGroup);
+          const newCost = clusterSpread(newFrom) + clusterSpread(newTo) + 
+                         clusterDiameter(newFrom) + clusterDiameter(newTo);
+
+          if (newCost < oldCost) {
+            groups[i] = newFrom;
+            groups[j] = newTo;
+            improved = true;
+            break;
+          }
+        }
+        if (improved) break;
+      }
+      if (improved) break;
+    }
+  }
+
+  return groups.filter(g => g.length > 0);
+}
+
 export default function ParcelGroupingPanel() {
   const [loading, setLoading] = useState(false);
 
@@ -180,8 +340,8 @@ export default function ParcelGroupingPanel() {
     const adaptiveMaxDiameter =
       maxRadius !== "" ? maxRadius * 2 : Math.max(4, baseNeighborDistance * 4);
 
-    // Sort heavier first so capacity is packed earlier
-    remaining.sort((a, b) => b.weight_kg - a.weight_kg);
+    // Shuffle instead of weight bias
+    remaining.sort(() => Math.random() - 0.5);
 
     while (remaining.length > 0) {
       const seed = remaining.shift()!;
@@ -276,7 +436,8 @@ export default function ParcelGroupingPanel() {
       groups.push(group);
     }
 
-    return postProcessGroups(groups, adaptiveMaxDiameter);
+    const refined = refineGroups(postProcessGroups(groups, adaptiveMaxDiameter), maxWeight, maxParcels, maxRadius);
+    return postProcessGroups(refined, adaptiveMaxDiameter);
   }
 
   function postProcessGroups(
@@ -380,8 +541,33 @@ export default function ParcelGroupingPanel() {
         return;
       }
 
-      const groups = generateGroups(parcels);
-      console.log("GENERATED GROUPS:", groups);
+    let bestGroups: Parcel[][] = [];
+    let bestCost = Infinity;
+
+    const RUNS = parcels.length > 200 ? 3 : 5;
+
+let noImprovementCount = 0;
+const IMPROVEMENT_THRESHOLD = 0.01;
+
+    for (let i = 0; i < RUNS; i++) {
+      let groups = generateGroups(parcels);
+      const cost = totalClusteringCost(groups);
+
+      if (cost < bestCost - IMPROVEMENT_THRESHOLD) {
+        bestCost = cost;
+        bestGroups = groups;
+        noImprovementCount = 0; // reset
+      } else {
+        noImprovementCount++;
+      }
+
+      // 🔥 EARLY STOP
+      if (noImprovementCount >= 2) break;
+    }
+
+        const groups = bestGroups;
+
+        console.log("BEST GROUPS:", groups);
 
       if (groups.length === 0) {
         console.warn("No clusters generated");
