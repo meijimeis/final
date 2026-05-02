@@ -451,6 +451,7 @@ export default function DriverDetails() {
         )}
       </div>
 
+        </div>
 
     {/* ✅ ADD THIS BLOCK HERE */}
     <div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
@@ -651,7 +652,6 @@ export default function DriverDetails() {
             </div>
           )}
         </div>
-      </div>
       </div>
   );
 }
