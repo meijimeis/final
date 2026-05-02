@@ -197,8 +197,7 @@ export function GeofenceMapContent({
   /* 🔍 DEBUG */
   console.log("GEOFENCE RIDERS:", riders);
 
-return (
-  <>
+  return (
     <div className="relative h-full w-full rounded-lg overflow-hidden">
       <MapContainer
         center={mapCenter}
@@ -275,26 +274,23 @@ return (
           />
         )}
       </MapContainer>
-    </div>
 
-    {/* 🎨 STYLES */}
-    <style jsx global>{`
-      .geofence-rider-wrapper {
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        background: white;
-        border: 3px solid #7C3AED;
-        border-radius: 50%;
-        padding: 4px;
-        box-shadow: 0 2px 6px rgba(17, 24, 39, 0.3);
-      }
+      {/* 🎨 STYLES */}
+<style jsx global>{`
+  .geofence-rider-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: white;
+    border: 3px solid #7C3AED;
+    border-radius: 50%;
+    padding: 4px;
+    box-shadow: 0 2px 6px rgba(17, 24, 39, 0.3);
+  }
 
-      .geofence-rider-img {
-        width: 30px;
-        height: 30px;
-        object-fit: contain;
-      }
-    `}</style>
-  </>
-);
+  .geofence-rider-img {
+    width: 30px;
+    height: 30px;
+    object-fit: contain;
+  }
+`}</style>
