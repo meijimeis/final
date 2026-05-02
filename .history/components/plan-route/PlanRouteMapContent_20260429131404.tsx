@@ -354,18 +354,14 @@ export function PlanRouteMapContent() {
   );
 
 const fitPoints = useMemo<[number, number][]>(() => {
-  // ❌ DO NOT auto-fit when rider is selected
+  // PRIORITY: selected rider
   if (rider && typeof rider.lat === "number" && typeof rider.lng === "number") {
-    return []; // 👈 THIS FIXES YOUR ISSUE
+    return [[rider.lat, rider.lng]];
   }
 
   if (isRouteMode && hasRiderCoordinates(rider)) {
-    const waypointPoints = routeWaypoints.map(
-      ([lng, lat]) => [lat, lng] as [number, number]
-    );
-
+    const waypointPoints = routeWaypoints.map(([lng, lat]) => [lat, lng] as [number, number]);
     if (routeLine.length > 1) return routeLine;
-
     return waypointPoints;
   }
 
