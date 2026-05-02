@@ -40,8 +40,6 @@ export default function DriverDetails() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [capacity, setCapacity] = useState<number>(0);
-  const [parcelQuota, setParcelQuota] = useState<number>(0);
-  const [editingQuota, setEditingQuota] = useState(false);
   const [editingCapacity, setEditingCapacity] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -374,7 +372,6 @@ export default function DriverDetails() {
   useEffect(() => {
     if (driver) {
       setCapacity(driver.capacity_kg || 0);
-      setParcelQuota(driver.parcel_quota || 0); // 👈 make sure field exists in DB later
       fetchAssignments();
     }
   }, [driver, fetchAssignments]);
@@ -447,63 +444,6 @@ export default function DriverDetails() {
           </div>
         )}
       </div>
-
-        </div>
-
-{/* ✅ ADD THIS BLOCK HERE */}
-<div className="mb-6 p-4 bg-purple-50 rounded-lg border border-purple-200">
-  <p className="text-sm font-medium text-gray-700 mb-3">Parcel Quota</p>
-
-  {!editingQuota ? (
-    <div className="flex items-center justify-between">
-      <p className="text-2xl font-bold text-purple-600">{parcelQuota}</p>
-      <button
-        onClick={() => setEditingQuota(true)}
-        className="px-4 py-2 bg-purple-600 text-white text-sm rounded-lg hover:bg-purple-700 transition"
-      >
-        Edit
-      </button>
-    </div>
-  ) : (
-    <div className="space-y-3">
-      <input
-        type="number"
-        value={parcelQuota}
-        onChange={(e) =>
-          setParcelQuota(Math.max(0, parseInt(e.target.value) || 0))
-        }
-        className="w-full px-3 py-2 border border-purple-300 rounded-lg focus:outline-none focus:border-purple-500"
-      />
-
-      <div className="flex gap-2">
-        <button
-          onClick={() => {
-            setEditingQuota(false);
-            setParcelQuota(driver.parcel_quota || 0);
-          }}
-          className="flex-1 px-3 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition"
-        >
-          Cancel
-        </button>
-
-        <button
-          onClick={() => {
-            setEditingQuota(false);
-
-            // TEMP: update UI only
-            setSelectedDriver({
-              ...driver,
-              parcel_quota: parcelQuota,
-            });
-          }}
-          className="flex-1 px-3 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition"
-        >
-          Save
-        </button>
-      </div>
-    </div>
-  )}
-</div>
 
       {/* Driver Info */}
       <div className="space-y-3 text-sm mb-6">
