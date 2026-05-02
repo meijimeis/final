@@ -12,6 +12,7 @@ import {
   getComponentIdsForPoint,
   type GeofenceRuntime,
 } from "@/lib/geofenceRuntime";
+import { useDriverStore } from "@/stores/useDriverStore"; // adjust path if needed
 
 
 const CLUSTER_COLORS = [
@@ -214,6 +215,10 @@ function buildDistanceClusters(
   const groups: ParcelGroupOutput[] = [];
   const remaining = [...candidates];
 
+  const isMotorcycle = selectedDriver?.vehicle_type === "motorcycle";
+
+  const MAX_WIDTH = isMotorcycle ? 100: 1000;
+  const MAX_HEIGHT = isMotorcycle ? 130 : 1000;
 
   while (remaining.length > 0) {
     const seed = remaining.shift();
@@ -230,15 +235,21 @@ function buildDistanceClusters(
       let bestDistance = Infinity;
 
 
-
+  const riderCapacity = selectedDriver?.capacity_kg ?? Infinity;
 
       for (let i = 0; i < remaining.length; i++) {
         const candidate = remaining[i];
         const candidateWeight = Math.max(0, candidate.weight_kg || 0);
 
+        if (clusterWeight + candidateWeight > riderCapacity) {
+          continue;
+        }
         const width = candidate.width_cm ?? 0;
         const height = candidate.height_cm ?? 0;
 
+        if (width > MAX_WIDTH || height > MAX_HEIGHT) {
+          continue;
+        }
         const candidateComponentIds = componentIdsByParcelId.get(candidate.id) || [];
 
         if (candidateComponentIds.length === 0) continue;
@@ -284,12 +295,6 @@ function buildDistanceClusters(
 
     const label = getClusterLabel(groups.length);
     const maxDistanceKm = getMaxDistanceFromCentroid(members, centroid);
-
-    const minParcels = settings.minParcels ?? 0;
-
-    if (members.length < minParcels) {
-      continue; // 🚫 discard small clusters
-}
 
     groups.push({
       id: `cluster-${label}`,

@@ -54,23 +54,6 @@ export default function ParcelGroupSettings({
         </div>
 
 
-        {/* Min Parcels */}
-        <div>
-          <label className="block text-xs font-medium text-gray-700 mb-2">
-            Min Parcels
-          </label>
-          <input
-            type="number"
-            min={0}
-            value={settings.minParcels ?? 0}
-            onChange={(e) => handleChange("minParcels", Number(e.target.value))}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm"
-          />
-          <p className="mt-1 text-[11px] text-gray-500">
-            Minimum parcels required per cluster
-          </p>
-        </div>
-
         {/* Max Parcels */}
         <div>
           <label className="block text-xs font-medium text-gray-700 mb-2">
