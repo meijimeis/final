@@ -2,8 +2,11 @@
 
 interface ParcelGroupSettingsProps {
   settings: {
-  maxParcels: number;
-  maxDistanceRadius: number;
+    maxWeight: number;
+    minWeight: number;
+    maxParcels: number;
+    minParcels: number;
+    maxDistanceRadius: number;
   };
   hasComputedPreview: boolean;
   ungroupedCount: number;
@@ -52,6 +55,35 @@ export default function ParcelGroupSettings({
           <p className="text-xs text-blue-800 leading-relaxed">{clusterDefinition}</p>
         </div>
 
+        {/* Max Weight */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-2">
+            Max Weight (kg)
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={settings.maxWeight}
+            onChange={(e) => handleChange("maxWeight", Number(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <p className="mt-1 text-[11px] text-gray-500">Set 0 to remove the max-weight limit.</p>
+        </div>
+
+        {/* Min Weight */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-2">
+            Min Weight (kg)
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={settings.minWeight}
+            onChange={(e) => handleChange("minWeight", Number(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <p className="mt-1 text-[11px] text-gray-500">Set 0 to remove the minimum-weight target.</p>
+        </div>
 
         {/* Max Parcels */}
         <div>
@@ -66,6 +98,21 @@ export default function ParcelGroupSettings({
             className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
           />
           <p className="mt-1 text-[11px] text-gray-500">Set 0 to remove the max-parcel limit.</p>
+        </div>
+
+        {/* Min Parcels */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-2">
+            Min Parcels
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={settings.minParcels}
+            onChange={(e) => handleChange("minParcels", Number(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <p className="mt-1 text-[11px] text-gray-500">Set 0 to remove the minimum-parcel target.</p>
         </div>
 
         {/* Max Distance Radius */}

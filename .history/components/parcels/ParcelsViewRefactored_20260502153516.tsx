@@ -182,7 +182,10 @@ function buildDistanceClusters(
   componentIdsByParcelId: Map<string, number[]>
 ): ParcelGroupOutput[] {
   const settings = sanitizeSettings(rawSettings);
+  const maxWeightLimit = settings.maxWeight > 0 ? settings.maxWeight : Number.POSITIVE_INFINITY;
   const maxParcelsLimit = settings.maxParcels > 0 ? settings.maxParcels : Number.POSITIVE_INFINITY;
+  const minWeightTarget = settings.minWeight > 0 ? settings.minWeight : 0;
+  const minParcelsTarget = settings.minParcels > 0 ? settings.minParcels : 0;
   const maxDistanceRadiusLimit =
     settings.maxDistanceRadius > 0
       ? settings.maxDistanceRadius
@@ -235,7 +238,8 @@ function buildDistanceClusters(
 
         if (!hasSharedComponent) continue;
 
-
+        const nextWeight = clusterWeight + Math.max(0, candidate.weight_kg || 0);
+        if (nextWeight > maxWeightLimit) continue;
 
         const distanceToCentroid = haversineKm(
           centroid.lat,
@@ -285,7 +289,9 @@ function buildDistanceClusters(
       })),
       totalWeight: Number(clusterWeight.toFixed(2)),
       centroid,
-      isUnderTarget: false,
+      isUnderTarget:
+        members.length < minParcelsTarget ||
+        clusterWeight < minWeightTarget,
       maxDistanceKm: Number(maxDistanceKm.toFixed(2)),
     });
   }

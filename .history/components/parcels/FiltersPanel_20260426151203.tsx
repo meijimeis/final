@@ -7,9 +7,20 @@ export default function FiltersPanel() {
   const [searchAddress, setSearchAddress] = useState("");
 
   // Display filters
+  const [weightRange, setWeightRange] = useState(50);
+  const [priority, setPriority] = useState({
+    normal: false,
+    express: false,
+  });
 
+  // Grouping settings
+  const [maxWeight, setMaxWeight] = useState<number | "">(50);
   const [maxParcels, setMaxParcels] = useState<number | "">("");
   const [maxRadius, setMaxRadius] = useState<number | "">("");
+
+  // Optional post-processing rules
+  const [minWeight, setMinWeight] = useState<number | "">("");
+  const [minParcels, setMinParcels] = useState<number | "">("");
 
   return (
     <div className="bg-transparent rounded-2xl border border-[#E5E7EB] p-4 space-y-5">
@@ -90,6 +101,25 @@ export default function FiltersPanel() {
           Grouping Settings
         </h4>
 
+        <div className="grid grid-cols-1 gap-3">
+          <div>
+            <label className="text-sm font-medium text-[#1F2937] block mb-1">
+              Max Weight (kg) <span className="text-red-500">*</span>
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={maxWeight}
+              onChange={(e) =>
+                setMaxWeight(e.target.value === "" ? "" : Number(e.target.value))
+              }
+              placeholder="Required capacity limit"
+              className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+            <p className="text-xs text-[#6B7280] mt-1">
+              Main hard constraint for grouping.
+            </p>
+          </div>
 
           <div>
             <label className="text-sm font-medium text-[#1F2937] block mb-1">
@@ -135,6 +165,50 @@ export default function FiltersPanel() {
           </div>
         </div>
       </div>
+
+      {/* ADVANCED / POST-PROCESSING */}
+      <div className="border-t border-[#E5E7EB] pt-4 space-y-3">
+        <h4 className="text-sm font-semibold text-[#1F2937]">
+          Advanced Post-Processing
+        </h4>
+
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+          <div>
+            <label className="text-sm font-medium text-[#1F2937] block mb-1">
+              Min Weight (optional)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={minWeight}
+              onChange={(e) =>
+                setMinWeight(
+                  e.target.value === "" ? "" : Number(e.target.value)
+                )
+              }
+              placeholder="Used for merge validation"
+              className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+
+          <div>
+            <label className="text-sm font-medium text-[#1F2937] block mb-1">
+              Min Parcels (optional)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={minParcels}
+              onChange={(e) =>
+                setMinParcels(
+                  e.target.value === "" ? "" : Number(e.target.value)
+                )
+              }
+              placeholder="Used for merge validation"
+              className="w-full h-10 rounded-lg border border-gray-300 px-3 text-sm text-gray-900 placeholder:text-gray-700 focus:outline-none focus:ring-2 focus:ring-purple-500"
+            />
+          </div>
+        </div>
 
         <p className="text-xs text-[#6B7280]">
         </p>

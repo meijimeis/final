@@ -68,7 +68,10 @@ type GeofenceRow = {
 };
 
 type GroupingSettings = {
+  maxWeight: number;
+  minWeight: number;
   maxParcels: number;
+  minParcels: number;
   maxDistanceRadius: number;
 };
 
@@ -160,10 +163,10 @@ function getClusterLabel(index: number) {
 
 function sanitizeSettings(settings: GroupingSettings): GroupingSettings {
   return {
-    maxParcels: Number.isFinite(settings.maxParcels)
-      ? Math.max(0, Math.floor(settings.maxParcels))
-      : 6,
-
+    maxWeight: Number.isFinite(settings.maxWeight) ? Math.max(0, settings.maxWeight) : 25,
+    minWeight: Number.isFinite(settings.minWeight) ? Math.max(0, settings.minWeight) : 5,
+    maxParcels: Number.isFinite(settings.maxParcels) ? Math.max(0, Math.floor(settings.maxParcels)) : 6,
+    minParcels: Number.isFinite(settings.minParcels) ? Math.max(0, Math.floor(settings.minParcels)) : 2,
     maxDistanceRadius: Number.isFinite(settings.maxDistanceRadius)
       ? Math.max(0, settings.maxDistanceRadius)
       : 3,
@@ -182,7 +185,10 @@ function buildDistanceClusters(
   componentIdsByParcelId: Map<string, number[]>
 ): ParcelGroupOutput[] {
   const settings = sanitizeSettings(rawSettings);
+  const maxWeightLimit = settings.maxWeight > 0 ? settings.maxWeight : Number.POSITIVE_INFINITY;
   const maxParcelsLimit = settings.maxParcels > 0 ? settings.maxParcels : Number.POSITIVE_INFINITY;
+  const minWeightTarget = settings.minWeight > 0 ? settings.minWeight : 0;
+  const minParcelsTarget = settings.minParcels > 0 ? settings.minParcels : 0;
   const maxDistanceRadiusLimit =
     settings.maxDistanceRadius > 0
       ? settings.maxDistanceRadius
@@ -235,7 +241,8 @@ function buildDistanceClusters(
 
         if (!hasSharedComponent) continue;
 
-
+        const nextWeight = clusterWeight + Math.max(0, candidate.weight_kg || 0);
+        if (nextWeight > maxWeightLimit) continue;
 
         const distanceToCentroid = haversineKm(
           centroid.lat,
@@ -285,7 +292,9 @@ function buildDistanceClusters(
       })),
       totalWeight: Number(clusterWeight.toFixed(2)),
       centroid,
-      isUnderTarget: false,
+      isUnderTarget:
+        members.length < minParcelsTarget ||
+        clusterWeight < minWeightTarget,
       maxDistanceKm: Number(maxDistanceKm.toFixed(2)),
     });
   }
@@ -302,7 +311,10 @@ export default function ParcelsViewRefactored() {
   const [clusterizeMessage, setClusterizeMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
   const [geofenceRuntime, setGeofenceRuntime] = useState<GeofenceRuntime | null>(null);
   const [settings, setSettings] = useState<GroupingSettings>({
+    maxWeight: 25,
+    minWeight: 5,
     maxParcels: 6,
+    minParcels: 2,
     maxDistanceRadius: 3,
   });
 
