@@ -6,11 +6,10 @@ import { create } from "zustand";
 export type Driver = {
   id: string;
   name: string;
-  vehicle_type: "motorcycle" | "four_wheels"; // ✅ FIXED
+  vehicle_type: "motorcycle";
   capacity_kg: number;
   status: string;
   organization_id?: string;
-  parcel_quota?: number; // ✅ ADD THIS
 };
 
 /* ================= STORE ================= */
