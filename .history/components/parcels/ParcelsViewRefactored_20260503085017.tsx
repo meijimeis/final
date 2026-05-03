@@ -117,7 +117,6 @@ type ParcelGroupOutput = {
   };
   isUnderTarget: boolean;
   maxDistanceKm: number;
-  vehicleType: "4-wheels" | "MC";
 };
 
 function hasCoordinates(parcel: Parcel): parcel is LatLngParcel {
@@ -249,30 +248,23 @@ function buildDistanceClusters(
 
 
 
-for (let i = 0; i < remaining.length; i++) {
-  const candidate = remaining[i];
-  const candidateWeight = Math.max(0, candidate.weight_kg || 0);
 
-  const width = candidate.width_cm ?? 0;
-  const height = candidate.height_cm ?? 0;
+      for (let i = 0; i < remaining.length; i++) {
+        const candidate = remaining[i];
+        const candidateWeight = Math.max(0, candidate.weight_kg || 0);
 
-  const candidateComponentIds = componentIdsByParcelId.get(candidate.id) || [];
+        const width = candidate.width_cm ?? 0;
+        const height = candidate.height_cm ?? 0;
 
-  if (candidateComponentIds.length === 0) continue;
+        const candidateComponentIds = componentIdsByParcelId.get(candidate.id) || [];
 
-  // ✅ ADD THIS BLOCK HERE
-  if (
-    settings.maxWeightKg &&
-    clusterWeight + candidateWeight > settings.maxWeightKg
-  ) {
-    continue; // 🚫 skip if exceeds vehicle capacity
-  }
+        if (candidateComponentIds.length === 0) continue;
 
-  const hasSharedComponent = candidateComponentIds.some((componentId) =>
-    sharedComponentIds.has(componentId)
-  );
+        const hasSharedComponent = candidateComponentIds.some((componentId) =>
+          sharedComponentIds.has(componentId)
+        );
 
-  if (!hasSharedComponent) continue;
+        if (!hasSharedComponent) continue;
 
 
 
