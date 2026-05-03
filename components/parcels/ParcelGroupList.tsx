@@ -93,11 +93,6 @@ export default function ParcelGroupList({
                       style={{ backgroundColor: group.color }}
                     />
                     <span className="font-semibold text-gray-900">Cluster {group.label}</span>
-                    {group.isUnderTarget ? (
-                      <span className="rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-semibold text-amber-700">
-                        Below target
-                      </span>
-                    ) : null}
                   </div>
 
                   <p className="text-xs text-gray-600">

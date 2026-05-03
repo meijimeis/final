@@ -508,18 +508,18 @@ export default function ParcelsViewRefactored() {
     setHasComputedPreview(true);
   };
 
-  const clusterReadyGroups = useMemo(
-    () => (hasComputedPreview ? groups.filter((group) => !group.isUnderTarget) : []),
+  const previewGroups = useMemo(
+    () => (hasComputedPreview ? groups : []),
     [groups, hasComputedPreview]
   );
 
   const groupedParcelIds = useMemo(() => {
     const ids = new Set<string>();
-    clusterReadyGroups.forEach((group) => {
+    previewGroups.forEach((group) => {
       group.parcels.forEach((parcel) => ids.add(parcel.id));
     });
     return ids;
-  }, [clusterReadyGroups]);
+  }, [previewGroups]);
 
   const clusterizableParcels = useMemo(
     () =>
@@ -554,9 +554,9 @@ export default function ParcelsViewRefactored() {
   const groupedCount = useMemo(
     () =>
       hasComputedPreview
-        ? clusterReadyGroups.reduce((sum, group) => sum + group.parcels.length, 0)
+        ? previewGroups.reduce((sum, group) => sum + group.parcels.length, 0)
         : 0,
-    [clusterReadyGroups, hasComputedPreview]
+    [previewGroups, hasComputedPreview]
   );
 
   const ungroupedCount = useMemo(
@@ -567,14 +567,9 @@ export default function ParcelsViewRefactored() {
     [clusterizableParcels, groupedParcelIds, hasComputedPreview]
   );
 
-  const flaggedClusters = useMemo(
-    () => (hasComputedPreview ? groups.filter((group) => group.isUnderTarget).length : 0),
-    [groups, hasComputedPreview]
-  );
-
   const emptyPreviewMessage = useMemo(() => {
     if (!hasComputedPreview) return null;
-    if (clusterReadyGroups.length > 0) return null;
+    if (previewGroups.length > 0) return null;
 
     if (clusterizableParcels.length === 0) {
       if (!geofenceRuntime || geofenceRuntime.zones.length === 0) {
@@ -582,7 +577,7 @@ export default function ParcelsViewRefactored() {
       }
 
       if (clusterizableButMissingCoordinatesCount > 0) {
-        return "No cluster-ready parcels found. Add valid latitude and longitude for parcels inside your geofences.";
+        return "No preview parcels found. Add valid latitude and longitude for parcels inside your geofences.";
       }
 
       return "No eligible unclustered parcels are currently available inside your geofences.";
@@ -590,7 +585,7 @@ export default function ParcelsViewRefactored() {
 
     return "No groups matched the current limits. Relax your limits or set optional limits to 0 to disable them.";
   }, [
-    clusterReadyGroups.length,
+    previewGroups.length,
     clusterizableButMissingCoordinatesCount,
     clusterizableParcels.length,
     geofenceRuntime,
@@ -613,16 +608,16 @@ export default function ParcelsViewRefactored() {
       return;
     }
 
-    if (clusterReadyGroups.length === 0) {
+    if (previewGroups.length === 0) {
       setClusterizeMessage({
         type: "error",
-        text: "No cluster-ready parcel groups found. Try adjusting your settings and auto-group again.",
+        text: "No parcel groups found. Try adjusting your settings and auto-group again.",
       });
       return;
     }
 
     const confirmed = window.confirm(
-      `Create ${clusterReadyGroups.length} parcel cluster(s) now? This will save the clustered result for route planning.`
+      `Create ${previewGroups.length} parcel cluster(s) now? This will save the clustered result for route planning.`
     );
 
     if (!confirmed) return;
@@ -651,8 +646,8 @@ export default function ParcelsViewRefactored() {
       let savedParcelCount = 0;
       let conflictedParcelCount = 0;
 
-      for (let i = 0; i < clusterReadyGroups.length; i += 1) {
-        const group = clusterReadyGroups[i];
+      for (let i = 0; i < previewGroups.length; i += 1) {
+        const group = previewGroups[i];
         const parcelIds = group.parcels.map((parcel) => parcel.id);
 
         if (parcelIds.length === 0) continue;
@@ -768,24 +763,20 @@ export default function ParcelsViewRefactored() {
         <div className="px-6 py-4 border-b bg-gray-50 flex items-center justify-between">
           <h2 className="font-semibold text-gray-900">Clusterize Preview</h2>
           <span className="text-xs bg-purple-100 text-purple-700 px-3 py-1 rounded-full font-medium">
-            {hasComputedPreview ? clusterReadyGroups.length : 0} ready clusters
+            {hasComputedPreview ? previewGroups.length : 0} preview clusters
           </span>
         </div>
 
         <div className="px-6 py-3 border-b bg-white">
           <p className="text-xs text-gray-600 leading-relaxed">{clusterDefinition}</p>
-          {hasComputedPreview ? (
-            <p className="text-xs text-gray-500 mt-2">
-              Needs review: <span className="font-semibold text-amber-700">{flaggedClusters}</span>
-            </p>
-          ) : (
+          {!hasComputedPreview ? (
             <p className="text-xs text-gray-500 mt-2">Click Auto Group Parcels to generate the preview list and map.</p>
-          )}
+          ) : null}
 
           <div className="mt-3 flex items-center gap-2">
             <button
               onClick={confirmClusterize}
-              disabled={isConfirming || !hasComputedPreview || clusterReadyGroups.length === 0}
+              disabled={isConfirming || !hasComputedPreview || previewGroups.length === 0}
               className="rounded-lg bg-purple-600 px-3 py-2 text-xs font-semibold text-white transition hover:bg-purple-700 disabled:cursor-not-allowed disabled:opacity-50"
             >
               {isConfirming ? "Saving Clusters..." : "Confirm Clusterize"}
