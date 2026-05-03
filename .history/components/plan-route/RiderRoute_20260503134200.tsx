@@ -144,6 +144,22 @@ export default function RiderRoute() {
         throw new Error("Route contains parcel(s) outside the selected rider super geofence area.");
       }
 
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const { count: existingRouteCount, error: existingRouteError } = await supabase
+        .from("routes")
+        .select("id", { count: "exact", head: true })
+        .eq("rider_id", rider.id)
+        .in("status", ["assigned", "active", "in_progress"])
+        .gte("created_at", todayStart.toISOString());
+
+      if (existingRouteError) {
+        throw existingRouteError;
+      }
+
+      if (Number(existingRouteCount || 0) > 0) {
+        throw new Error("This rider already has a route assigned today. Each rider can take one cluster per day.");
+      }
 
       if (
         selectedClusterName &&

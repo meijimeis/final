@@ -114,21 +114,8 @@ function createRiderIcon() {
   return L.divIcon({
     className: "",
     html: `
-      <div style="
-        width:40px;
-        height:40px;
-        border-radius:50%;
-        overflow:hidden;
-        border:2px solid #7C3AED;
-        display:flex;
-        align-items:center;
-        justify-content:center;
-        background:white;
-      ">
-        <img 
-          src="/images/scooter.png" 
-          style="width:28px;height:28px;object-fit:contain;"
-        />
+      <div class="plan-route-rider-wrapper">
+        <img src="/images/scooter.png" class="plan-route-rider-img"/>
       </div>
     `,
     iconSize: [40, 40],
