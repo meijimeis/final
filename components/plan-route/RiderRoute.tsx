@@ -1,7 +1,8 @@
 "use client";
 
 import { useMemo, useState } from "react";
-import { usePlanRouteStore, Parcel } from "@/stores/usePlanRouteStore";
+import { usePlanRouteStore } from "@/stores/usePlanRouteStore";
+import { planRouteStopsByRideLoad, type PlannedRouteStop } from "@/lib/routeLoadPlanning";
 import { supabase } from "@/lib/supabaseClient";
 import { assignParcelClusterToRider, getGeofences } from "@/lib/api";
 import { MapPin, CheckCircle, AlertCircle, Loader } from "lucide-react";
@@ -19,67 +20,6 @@ type GeofenceRow = {
 };
 
 const INDIVIDUAL_PREFIX = "parcel:";
-
-/* ================= DISTANCE HELPER ================= */
-
-function haversine(
-  lat1: number,
-  lon1: number,
-  lat2: number,
-  lon2: number
-) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos((lat1 * Math.PI) / 180) *
-      Math.cos((lat2 * Math.PI) / 180) *
-      Math.sin(dLon / 2) ** 2;
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-/* ================= ROUTE ORDERING ================= */
-
-function orderParcels(
-  startLat: number,
-  startLng: number,
-  parcels: Parcel[]
-): Parcel[] {
-  const remaining = [...parcels];
-  const ordered: Parcel[] = [];
-
-  let currentLat = startLat;
-  let currentLng = startLng;
-
-  while (remaining.length > 0) {
-    let nearestIndex = 0;
-    let nearestDistance = Infinity;
-
-    remaining.forEach((p, i) => {
-      const d = haversine(
-        currentLat,
-        currentLng,
-        p.lat,
-        p.lng
-      );
-
-      if (d < nearestDistance) {
-        nearestDistance = d;
-        nearestIndex = i;
-      }
-    });
-
-    const next = remaining.splice(nearestIndex, 1)[0];
-    ordered.push(next);
-    currentLat = next.lat;
-    currentLng = next.lng;
-  }
-
-  return ordered;
-}
 
 function toStopLabel(index: number) {
   let n = index;
@@ -118,6 +58,7 @@ export default function RiderRoute() {
   const rider = usePlanRouteStore((s) => s.selectedRider);
   const selectedClusterName = usePlanRouteStore((s) => s.selectedClusterName);
   const parcels = usePlanRouteStore((s) => s.assignedParcels);
+  const serviceAreaPoint = usePlanRouteStore((s) => s.serviceAreaPoint);
   const clearAssignment = usePlanRouteStore((s) => s.clearAssignment);
   const [isConfirming, setIsConfirming] = useState(false);
   const [confirmMessage, setConfirmMessage] = useState<{
@@ -125,14 +66,33 @@ export default function RiderRoute() {
     text: string;
   } | null>(null);
 
-  const orderedParcels = useMemo(() => {
-    if (!rider || parcels.length === 0) return [];
-    if (!hasRiderCoordinates(rider)) return parcels;
-    return orderParcels(rider.lat, rider.lng, parcels);
-  }, [rider, parcels]);
+  const plannedStops = useMemo(() => {
+    if (!hasRiderCoordinates(rider) || parcels.length === 0) return [];
+
+    return planRouteStopsByRideLoad({
+      startLat: rider.lat,
+      startLng: rider.lng,
+      parcels,
+      capacityKg: rider.capacity_kg || 0,
+      serviceArea: serviceAreaPoint,
+    });
+  }, [parcels, rider, serviceAreaPoint]);
+
+  const plannedParcelStops = useMemo(
+    () =>
+      plannedStops.filter(
+        (stop): stop is Extract<PlannedRouteStop, { type: "parcel" }> => stop.type === "parcel"
+      ),
+    [plannedStops]
+  );
+
+  const rideCount = useMemo(
+    () => plannedStops.reduce((max, stop) => Math.max(max, stop.rideNumber), 0),
+    [plannedStops]
+  );
 
   const handleConfirmAssignment = async () => {
-    if (!rider || orderedParcels.length === 0) return;
+    if (!rider || plannedParcelStops.length === 0) return;
 
     setIsConfirming(true);
     setConfirmMessage(null);
@@ -162,7 +122,10 @@ export default function RiderRoute() {
 
       const riderComponentSet = new Set(riderComponentIds);
 
-      const routePoints = orderedParcels.map((parcel) => ({ lat: parcel.lat, lng: parcel.lng }));
+      const routePoints = plannedParcelStops.map((stop) => ({
+        lat: stop.parcel.lat,
+        lng: stop.parcel.lng,
+      }));
 
       const allInsideGeofences = routePoints.every((point) =>
         isPointInsideGeofences(point.lat, point.lng, geofenceRuntime)
@@ -179,6 +142,23 @@ export default function RiderRoute() {
 
       if (!allInSameRiderGeofence) {
         throw new Error("Route contains parcel(s) outside the selected rider super geofence area.");
+      }
+
+      const todayStart = new Date();
+      todayStart.setHours(0, 0, 0, 0);
+      const { count: existingRouteCount, error: existingRouteError } = await supabase
+        .from("routes")
+        .select("id", { count: "exact", head: true })
+        .eq("rider_id", rider.id)
+        .in("status", ["assigned", "active", "in_progress"])
+        .gte("created_at", todayStart.toISOString());
+
+      if (existingRouteError) {
+        throw existingRouteError;
+      }
+
+      if (Number(existingRouteCount || 0) > 0) {
+        throw new Error("This rider already has a route assigned today. Each rider can take one cluster per day.");
       }
 
       if (
@@ -237,7 +217,10 @@ export default function RiderRoute() {
           throw new Error("No assignable parcel cluster row found for the selected cluster.");
         }
 
-        await assignParcelClusterToRider(clusterCandidate.id, rider.id);
+        await assignParcelClusterToRider(clusterCandidate.id, rider.id, undefined, {
+          capacityKg: rider.capacity_kg || 0,
+          serviceAreaPoint,
+        });
 
         setConfirmMessage({
           type: "success",
@@ -274,9 +257,9 @@ export default function RiderRoute() {
       if (routeError) throw routeError;
 
       // Create deliveries for each parcel_list
-      const deliveriesPayload = orderedParcels.map((p, idx) => ({
+      const deliveriesPayload = plannedParcelStops.map((stop, idx) => ({
         route_id: routeData.id,
-        parcel_id: p.id, // This is a parcel_list ID
+        parcel_id: stop.parcel.id, // This is a parcel_list ID
         rider_id: rider.id,
         sequence: idx + 1,
         status: "pending",
@@ -296,14 +279,14 @@ export default function RiderRoute() {
         })
         .in(
           "id",
-          parcels.map((p) => p.id)
+          plannedParcelStops.map((stop) => stop.parcel.id)
         );
 
       if (parcelListError) throw parcelListError;
 
       setConfirmMessage({
         type: "success",
-        text: `Route confirmed! ${orderedParcels.length} parcels assigned to ${rider.name}`,
+        text: `Route confirmed! ${plannedParcelStops.length} parcels assigned to ${rider.name}`,
       });
 
       // Clear the assignment after 2 seconds
@@ -321,7 +304,7 @@ export default function RiderRoute() {
     }
   };
 
-  if (!rider || orderedParcels.length === 0) {
+  if (!rider || plannedParcelStops.length === 0) {
     return (
       <div className="bg-white rounded-xl p-4 text-sm shadow-sm border border-gray-100">
         No route yet
@@ -332,6 +315,11 @@ export default function RiderRoute() {
   return (
     <div className="bg-white rounded-xl p-4 shadow">
       <h3 className="font-semibold mb-4">Rider Route</h3>
+      <p className="mb-4 text-xs text-gray-600">
+        {rideCount > 1
+          ? `${rideCount} ride loads planned at ${rider.capacity_kg || 0} kg per ride. Return stops go to ${serviceAreaPoint?.name || "the service area"}.`
+          : `1 ride load planned${rider.capacity_kg ? ` at ${rider.capacity_kg} kg capacity` : ""}.`}
+      </p>
 
       {/* CONFIRMATION MESSAGE */}
       {confirmMessage && (
@@ -375,15 +363,15 @@ export default function RiderRoute() {
 
       {/* STOPS */}
       <div className="space-y-3">
-        {orderedParcels.map((p, i) => (
-          <div key={p.id} className="flex gap-4 relative">
+        {plannedStops.map((stop, i) => (
+          <div key={stop.type === "parcel" ? stop.parcel.id : stop.id} className="flex gap-4 relative">
             {/* Timeline + Number */}
             <div className="flex flex-col items-center">
               <div className="w-6 h-6 rounded-full bg-orange-100 text-orange-600 text-xs font-semibold flex items-center justify-center">
-                {toStopLabel(i)}
+                {stop.type === "service_area" ? "SA" : toStopLabel(i)}
               </div>
 
-              {i !== orderedParcels.length - 1 && (
+              {i !== plannedStops.length - 1 && (
                 <div className="w-px flex-1 bg-gray-200 mt-1" />
               )}
             </div>
@@ -391,10 +379,13 @@ export default function RiderRoute() {
             {/* Stop Card */}
             <div className="flex-1 border rounded-lg px-3 py-2">
               <p className="text-sm font-medium">
-                Stop {toStopLabel(i)}
+                {stop.type === "service_area" ? "Return to Service Area" : `Stop ${toStopLabel(i)}`}
               </p>
               <p className="text-xs text-gray-700">
-                {p.address}
+                {stop.type === "service_area" ? stop.name : stop.parcel.address}
+              </p>
+              <p className="mt-1 text-[11px] text-gray-500">
+                Ride {stop.rideNumber} • Load {stop.loadWeightKg.toFixed(1)} kg
               </p>
             </div>
           </div>

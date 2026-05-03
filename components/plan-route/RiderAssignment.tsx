@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useState, useCallback } from "react";
 import { supabase } from "@/lib/supabaseClient";
 import { getGeofences, getLatestRiderLocation, getRiders } from "@/lib/api";
-import { usePlanRouteStore, Parcel, Rider } from "@/stores/usePlanRouteStore";
+import { usePlanRouteStore, Parcel, Rider, type ServiceAreaPoint } from "@/stores/usePlanRouteStore";
 import { MapPin, CheckCircle2 } from "lucide-react";
 import {
   buildGeofenceRuntime,
@@ -48,6 +48,7 @@ type GeofenceRow = {
   id?: string | null;
   name?: string | null;
   region?: string | null;
+  zone_type?: string | null;
   geometry?: unknown;
 };
 
@@ -82,6 +83,97 @@ const hasRiderCoordinates = (
   Number.isFinite(rider.lat) &&
   typeof rider.lng === "number" &&
   Number.isFinite(rider.lng);
+
+function readNumber(value: unknown): number | null {
+  if (typeof value === "number" && Number.isFinite(value)) return value;
+  if (typeof value === "string") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+
+  return null;
+}
+
+function parseLngLatPoint(point: unknown): [number, number] | null {
+  if (!Array.isArray(point) || point.length < 2) return null;
+
+  const first = readNumber(point[0]);
+  const second = readNumber(point[1]);
+
+  if (first == null || second == null) return null;
+  if (Math.abs(first) <= 180 && Math.abs(second) <= 90) return [first, second];
+  if (Math.abs(first) <= 90 && Math.abs(second) <= 180) return [second, first];
+
+  return null;
+}
+
+function collectLngLatPoints(value: unknown): Array<[number, number]> {
+  if (!Array.isArray(value)) return [];
+
+  const direct = value
+    .map((point) => parseLngLatPoint(point))
+    .filter((point): point is [number, number] => Boolean(point));
+
+  if (direct.length >= 1) return direct;
+
+  return value.flatMap((entry) => collectLngLatPoints(entry));
+}
+
+function getGeofenceCentroid(row: GeofenceRow): ServiceAreaPoint | null {
+  const geometry = row.geometry;
+  const root = geometry && typeof geometry === "object" && !Array.isArray(geometry)
+    ? (geometry as Record<string, unknown>)
+    : {};
+  const nestedGeometry = root.geometry && typeof root.geometry === "object" && !Array.isArray(root.geometry)
+    ? (root.geometry as Record<string, unknown>)
+    : {};
+
+  const points = [
+    ...collectLngLatPoints(root.coordinates),
+    ...collectLngLatPoints(nestedGeometry.coordinates),
+    ...collectLngLatPoints(geometry),
+  ];
+
+  if (points.length === 0) return null;
+
+  const total = points.reduce(
+    (sum, [lng, lat]) => ({ lat: sum.lat + lat, lng: sum.lng + lng }),
+    { lat: 0, lng: 0 }
+  );
+
+  return {
+    name: row.name || "Service Area",
+    lat: total.lat / points.length,
+    lng: total.lng / points.length,
+  };
+}
+
+function getServiceAreaPoint(
+  geofenceRows: GeofenceRow[],
+  rider: Rider & { lat: number; lng: number },
+  riderComponentSet: Set<number>,
+  geofenceRuntime: ReturnType<typeof buildGeofenceRuntime>
+): ServiceAreaPoint {
+  const preferredRows = geofenceRows.filter((row) => {
+    const zoneType = String(row.zone_type || "").toUpperCase();
+    return zoneType === "DEPOT" || zoneType === "SERVICE_AREA";
+  });
+
+  for (const row of preferredRows) {
+    const centroid = getGeofenceCentroid(row);
+    if (!centroid) continue;
+
+    const componentIds = getComponentIdsForPoint(centroid.lat, centroid.lng, geofenceRuntime);
+    const sharesRiderComponent = componentIds.some((componentId) => riderComponentSet.has(componentId));
+    if (sharesRiderComponent) return centroid;
+  }
+
+  return {
+    name: "Service Area",
+    lat: rider.lat,
+    lng: rider.lng,
+  };
+}
 
 function getProfileName(
   profiles:
@@ -144,6 +236,7 @@ export default function RiderAssignment() {
   const selectedRider = usePlanRouteStore((s) => s.selectedRider);
   const setSelectedRider = usePlanRouteStore((s) => s.setSelectedRider);
   const setAssignedParcels = usePlanRouteStore((s) => s.setAssignedParcels);
+  const setServiceAreaPoint = usePlanRouteStore((s) => s.setServiceAreaPoint);
 
   const [parcels, setParcels] = useState<Parcel[]>([]);
   const [riders, setRiders] = useState<Rider[]>([]);
@@ -176,8 +269,9 @@ export default function RiderAssignment() {
       };
 
       const geofenceRowsRaw = await getGeofences(undefined);
+      const geofenceRows = Array.isArray(geofenceRowsRaw) ? (geofenceRowsRaw as GeofenceRow[]) : [];
       const geofenceRuntime = buildGeofenceRuntime(
-        Array.isArray(geofenceRowsRaw) ? (geofenceRowsRaw as GeofenceRow[]) : []
+        geofenceRows
       );
 
       const finalizeEligibleParcels = (candidateParcels: Parcel[], sourceLabel: string) => {
@@ -233,6 +327,7 @@ export default function RiderAssignment() {
         }
 
         const riderComponentSet = new Set(riderComponentIds);
+        setServiceAreaPoint(getServiceAreaPoint(geofenceRows, selectedRider, riderComponentSet, geofenceRuntime));
         const allInSameRiderGeofence = parcelsWithCoordinates.every((parcel) => {
           const parcelComponentIds = getComponentIdsForPoint(parcel.lat, parcel.lng, geofenceRuntime);
           return parcelComponentIds.some((componentId) => riderComponentSet.has(componentId));
@@ -478,15 +573,6 @@ export default function RiderAssignment() {
 
   /* ================= COMPUTED ================= */
 
-  const totalWeight = useMemo(
-    () =>
-      parcels.reduce((sum: number, p: Parcel) => {
-        const weight = Number(p.weight_kg);
-        return sum + (Number.isFinite(weight) ? weight : 0);
-      }, 0),
-    [parcels]
-  );
-
   const parcelsWithCoordinates = useMemo(
     () => parcels.filter((p) => isFiniteNumber(p.lat) && isFiniteNumber(p.lng)),
     [parcels]
@@ -509,7 +595,6 @@ export default function RiderAssignment() {
     if (riders.length === 0) return [];
 
     const rankedRiders: SuggestedRider[] = riders
-      .filter((r: Rider) => r.capacity_kg >= totalWeight || r.id === selectedRider?.id)
       .map((r): SuggestedRider => {
         const hasLiveLocation = hasRiderCoordinates(r);
 
@@ -549,7 +634,7 @@ export default function RiderAssignment() {
     }
 
     return rankedRiders;
-  }, [riders, totalWeight, clusterCenter, selectedRider]);
+  }, [riders, clusterCenter, selectedRider]);
 
   /* ================= ACTION ================= */
 

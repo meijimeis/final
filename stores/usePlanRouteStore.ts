@@ -19,16 +19,24 @@ export type Parcel = {
   lng: number;
 };
 
+export type ServiceAreaPoint = {
+  name: string;
+  lat: number;
+  lng: number;
+};
+
 /* ================= STORE ================= */
 
 type PlanRouteState = {
   selectedClusterName: string | null;
   selectedRider: Rider | null;
   assignedParcels: Parcel[];
+  serviceAreaPoint: ServiceAreaPoint | null;
 
   setSelectedClusterName: (name: string | null) => void;
   setSelectedRider: (rider: Rider | null) => void;
   setAssignedParcels: (parcels: Parcel[]) => void;
+  setServiceAreaPoint: (point: ServiceAreaPoint | null) => void;
   clearAssignment: () => void;
 };
 
@@ -36,6 +44,7 @@ export const usePlanRouteStore = create<PlanRouteState>((set) => ({
   selectedClusterName: null,
   selectedRider: null,
   assignedParcels: [],
+  serviceAreaPoint: null,
 
   setSelectedClusterName: (name) =>
     set({ selectedClusterName: name, assignedParcels: [] }),
@@ -55,6 +64,9 @@ export const usePlanRouteStore = create<PlanRouteState>((set) => ({
   setAssignedParcels: (parcels) =>
     set({ assignedParcels: parcels }),
 
+  setServiceAreaPoint: (point) =>
+    set({ serviceAreaPoint: point }),
+
   clearAssignment: () =>
-    set({ selectedRider: null, assignedParcels: [], selectedClusterName: null }),
+    set({ selectedRider: null, assignedParcels: [], selectedClusterName: null, serviceAreaPoint: null }),
 }));

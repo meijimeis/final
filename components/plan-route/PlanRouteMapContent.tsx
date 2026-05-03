@@ -17,7 +17,9 @@ import {
   LngLat,
   type DirectionsResult,
 } from "@/lib/openRouteService";
-import { usePlanRouteStore, Parcel, Rider } from "@/stores/usePlanRouteStore";
+import { haversineDistance } from "@/lib/distance";
+import { usePlanRouteStore, Rider } from "@/stores/usePlanRouteStore";
+import { planRouteStopsByRideLoad } from "@/lib/routeLoadPlanning";
 
 const DEFAULT_CENTER: [number, number] = [14.6, 121.0];
 const OSM_TILE_URL = "https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png";
@@ -34,48 +36,6 @@ const LEG_COLORS = [
   "#B45309",
   "#334155",
 ];
-
-function haversine(lat1:number, lon1:number, lat2:number, lon2:number) {
-  const R = 6371;
-  const dLat = ((lat2 - lat1) * Math.PI) / 180;
-  const dLon = ((lon2 - lon1) * Math.PI) / 180;
-
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) *
-    Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
-
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function orderParcels(startLat:number, startLng:number, parcels:Parcel[]) {
-  const remaining = [...parcels];
-  const ordered:Parcel[] = [];
-
-  let currLat = startLat;
-  let currLng = startLng;
-
-  while (remaining.length) {
-    let nearest = 0;
-    let min = Infinity;
-
-    remaining.forEach((p, i) => {
-      const d = haversine(currLat, currLng, p.lat, p.lng);
-      if (d < min) {
-        min = d;
-        nearest = i;
-      }
-    });
-
-    const next = remaining.splice(nearest, 1)[0];
-    ordered.push(next);
-    currLat = next.lat;
-    currLng = next.lng;
-  }
-
-  return ordered;
-}
 
 function isValidLatLng(lat: unknown, lng: unknown): lat is number {
   return (
@@ -119,7 +79,7 @@ function toStopLabel(index: number) {
 }
 
 function getDistanceToPointMeters(a: LngLat, b: LngLat): number {
-  return haversine(a[1], a[0], b[1], b[0]) * 1000;
+  return haversineDistance(a[1], a[0], b[1], b[0]) * 1000;
 }
 
 function deriveWaypointIndexesFromGeometry(
@@ -163,12 +123,12 @@ function createRiderIcon() {
   });
 }
 
-function createStartIcon() {
+function createServiceAreaIcon() {
   return L.divIcon({
     className: "",
-    html: '<div class="plan-route-start-icon">S</div>',
-    iconSize: [28, 28],
-    iconAnchor: [14, 14],
+    html: '<div class="plan-route-service-icon">SA</div>',
+    iconSize: [26, 26],
+    iconAnchor: [13, 13],
   });
 }
 
@@ -252,6 +212,7 @@ function hasOverviewRiderCoordinates(
 export function PlanRouteMapContent() {
   const rider = usePlanRouteStore(s => s.selectedRider);
   const assignedParcels = usePlanRouteStore(s => s.assignedParcels);
+  const serviceAreaPoint = usePlanRouteStore(s => s.serviceAreaPoint);
   const [routeLine, setRouteLine] = useState<[number, number][]>([]);
   const [routeWaypointIndexes, setRouteWaypointIndexes] = useState<number[]>([]);
   const [routeDistanceMeters, setRouteDistanceMeters] = useState<number | null>(null);
@@ -263,7 +224,7 @@ export function PlanRouteMapContent() {
   const [mapZoom, setMapZoom] = useState(11);
 
   const riderIcon = useMemo(() => createRiderIcon(), []);
-  const startIcon = useMemo(() => createStartIcon(), []);
+  const serviceAreaIcon = useMemo(() => createServiceAreaIcon(), []);
 
   const isRouteMode = useMemo(() => {
     return (
@@ -272,23 +233,33 @@ export function PlanRouteMapContent() {
     );
   }, [assignedParcels.length, rider]);
 
-  const orderedParcels = useMemo(() => {
+  const plannedStops = useMemo(() => {
     if (!hasRiderCoordinates(rider) || !isRouteMode) return [];
 
     const validParcels = assignedParcels.filter((parcel) =>
       isValidLatLng(parcel.lat, parcel.lng)
     );
 
-    return orderParcels(rider.lat, rider.lng, validParcels);
-  }, [assignedParcels, isRouteMode, rider]);
+    return planRouteStopsByRideLoad({
+      startLat: rider.lat,
+      startLng: rider.lng,
+      parcels: validParcels,
+      capacityKg: rider.capacity_kg || 0,
+      serviceArea: serviceAreaPoint,
+    });
+  }, [assignedParcels, isRouteMode, rider, serviceAreaPoint]);
 
   const routeWaypoints = useMemo<LngLat[]>(() => {
     if (!hasRiderCoordinates(rider) || !isRouteMode) return [];
     return [
       [rider.lng, rider.lat],
-      ...orderedParcels.map((parcel) => [parcel.lng, parcel.lat] as LngLat),
+      ...plannedStops.map((stop) =>
+        stop.type === "parcel"
+          ? [stop.parcel.lng, stop.parcel.lat] as LngLat
+          : [stop.lng, stop.lat] as LngLat
+      ),
     ];
-  }, [isRouteMode, orderedParcels, rider]);
+  }, [isRouteMode, plannedStops, rider]);
 
   const routeLegLines = useMemo(() => {
     if (routeLine.length < 2) return [];
@@ -315,8 +286,10 @@ export function PlanRouteMapContent() {
     const baseOffsetAtZoom18 = 0.00012;
     const zoomFactor = Math.pow(2, Math.max(0, 18 - mapZoom));
 
-    return orderedParcels.map((parcel, index) => {
-      const coordinateKey = `${parcel.lat.toFixed(4)},${parcel.lng.toFixed(4)}`;
+    return plannedStops.map((stop, index) => {
+      const lat = stop.type === "parcel" ? stop.parcel.lat : stop.lat;
+      const lng = stop.type === "parcel" ? stop.parcel.lng : stop.lng;
+      const coordinateKey = `${lat.toFixed(4)},${lng.toFixed(4)}`;
       const overlapIndex = overlapCounts.get(coordinateKey) || 0;
       overlapCounts.set(coordinateKey, overlapIndex + 1);
 
@@ -326,19 +299,19 @@ export function PlanRouteMapContent() {
         overlapIndex === 0
           ? 0
           : baseOffsetAtZoom18 * zoomFactor * ring;
-      const markerLat = parcel.lat + Math.sin(angle) * offsetRadius;
-      const markerLng = parcel.lng + Math.cos(angle) * offsetRadius;
+      const markerLat = lat + Math.sin(angle) * offsetRadius;
+      const markerLng = lng + Math.cos(angle) * offsetRadius;
 
       return {
-        parcel,
+        stop,
         index,
-        label: toStopLabel(index),
+        label: stop.type === "service_area" ? "SA" : toStopLabel(index),
         markerLat,
         markerLng,
         color: LEG_COLORS[index % LEG_COLORS.length],
       };
     });
-  }, [mapZoom, orderedParcels]);
+  }, [mapZoom, plannedStops]);
 
   const stopIcons = useMemo(
     () => displayStops.map((stop) => createStopIcon(stop.label, stop.color)),
@@ -658,12 +631,18 @@ const fitPoints = useMemo<[number, number][]>(() => {
                 </Marker>
               {displayStops.map((stop, index) => (
                 <Marker
-                  key={stop.parcel.id}
+                  key={stop.stop.type === "parcel" ? stop.stop.parcel.id : stop.stop.id}
                   position={[stop.markerLat, stop.markerLng]}
-                  icon={stopIcons[index] || createStopIcon(stop.label, stop.color)}
+                  icon={
+                    stop.stop.type === "service_area"
+                      ? serviceAreaIcon
+                      : stopIcons[index] || createStopIcon(stop.label, stop.color)
+                  }
                 >
                   <Popup>
-                    Stop {stop.label}: {stop.parcel.address}
+                    {stop.stop.type === "service_area"
+                      ? `Return to ${stop.stop.name}`
+                      : `Stop ${stop.label}: ${stop.stop.parcel.address}`}
                   </Popup>
                 </Marker>
               ))}
@@ -740,6 +719,9 @@ const fitPoints = useMemo<[number, number][]>(() => {
             <p className="text-[11px] text-gray-600">
               Assigned stops: {assignedParcels.length} • Rendered markers: {displayStops.length}
             </p>
+            {serviceAreaPoint ? (
+              <p className="text-[11px] text-gray-600">Service area: {serviceAreaPoint.name}</p>
+            ) : null}
             {routeDistanceMeters !== null || routeDurationSeconds !== null ? (
               <p className="text-[11px] text-gray-600">
                 {routeDistanceMeters !== null
@@ -778,20 +760,6 @@ const fitPoints = useMemo<[number, number][]>(() => {
           object-fit: contain;
         }
 
-        .plan-route-start-icon {
-          width: 28px;
-          height: 28px;
-          border-radius: 50%;
-          background: #7c3aed;
-          color: #fff;
-          border: 2px solid #fff;
-          box-shadow: 0 2px 6px rgba(17, 24, 39, 0.3);
-          font-size: 12px;
-          font-weight: 800;
-          line-height: 24px;
-          text-align: center;
-        }
-
         .plan-route-stop-icon {
           width: 28px;
           height: 28px;
@@ -803,6 +771,20 @@ const fitPoints = useMemo<[number, number][]>(() => {
           font-size: 12px;
           font-weight: 700;
           line-height: 24px;
+          text-align: center;
+        }
+
+        .plan-route-service-icon {
+          width: 30px;
+          height: 30px;
+          border-radius: 50%;
+          background: #0f766e;
+          color: #fff;
+          border: 2px solid #fff;
+          box-shadow: 0 2px 5px rgba(17, 24, 39, 0.28);
+          font-size: 10px;
+          font-weight: 800;
+          line-height: 26px;
           text-align: center;
         }
       `}</style>
