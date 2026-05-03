@@ -334,10 +334,7 @@ for (let i = 0; i < remaining.length; i++) {
     const maxDistanceKm = getMaxDistanceFromCentroid(members, centroid);
 
     const minParcels = settings.minParcels ?? 0;
-
-    if (members.length < minParcels) {
-      continue; // 🚫 discard small clusters
-}
+    const isUnderTarget = members.length < minParcels;
 
     groups.push({
       id: `cluster-${label}`,
@@ -355,7 +352,7 @@ for (let i = 0; i < remaining.length; i++) {
       })),
       totalWeight: Number(clusterWeight.toFixed(2)),
       centroid,
-      isUnderTarget: false,
+      isUnderTarget,
       maxDistanceKm: Number(maxDistanceKm.toFixed(2)),
     });
   }
@@ -495,6 +492,7 @@ export default function ParcelsViewRefactored() {
       fourWheelerParcels,
       {
         ...settings,
+        minParcels: 1,
         maxWeightKg: VEHICLE_RULES.fourWheeler.maxWeight,
         maxWidthCm: VEHICLE_RULES.fourWheeler.maxWidth,
         maxHeightCm: VEHICLE_RULES.fourWheeler.maxHeight,
@@ -807,7 +805,7 @@ export default function ParcelsViewRefactored() {
         </div>
 
         <ParcelGroupList
-          groups={clusterReadyGroups}
+          groups={hasComputedPreview ? groups : []}
           loading={loading}
           hasComputedPreview={hasComputedPreview}
           onAutoGroup={recomputeClusters}
@@ -819,7 +817,7 @@ export default function ParcelsViewRefactored() {
       <div className="bg-white rounded-lg shadow-sm border border-gray-100 overflow-hidden flex flex-col">
         <div className="px-4 py-3 border-b bg-gray-50 font-semibold text-sm">Clusterize Map</div>
         <div className="flex-1 overflow-hidden">
-          <ClusteredParcelMap groups={clusterReadyGroups} />
+          <ClusteredParcelMap groups={hasComputedPreview ? groups : []} />
         </div>
       </div>
     </div>
