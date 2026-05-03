@@ -36,6 +36,8 @@ type ClusterParcelPointRow = {
   tracking_code?: string | null;
   address?: string | null;
   weight_kg?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
   latitude?: number | null;
   longitude?: number | null;
 };
@@ -245,7 +247,7 @@ export default function ClusteredParcelsTableTab() {
       try {
         const { data, error } = await supabase
           .from("parcel_lists")
-          .select("id, cluster_name, tracking_code, address, weight_kg, latitude, longitude")
+          .select("id, cluster_name, tracking_code, address, weight_kg, width_cm, height_cm, latitude, longitude")
           .in("cluster_name", clusterNames)
           .not("latitude", "is", null)
           .not("longitude", "is", null)
@@ -309,6 +311,8 @@ export default function ClusteredParcelsTableTab() {
             tracking_code: point.tracking_code || point.id,
             address: point.address || "No address",
             weight_kg: Number(point.weight_kg || 0),
+            width_cm: point.width_cm,
+            height_cm: point.height_cm,
             lat: point.latitude as number,
             lng: point.longitude as number,
           }));

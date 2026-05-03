@@ -81,6 +81,8 @@ const CONTACT_KEYS = [
 ];
 
 const WEIGHT_KEYS = ["weight_kg", "weight", "parcel_weight", "parcel_weight_kg"];
+const WIDTH_KEYS = ["width_cm", "width", "parcel_width", "parcel_width_cm"];
+const HEIGHT_KEYS = ["height_cm", "height", "parcel_height", "parcel_height_cm"];
 const REGION_KEYS = ["region", "city", "district", "area", "zone"];
 const PRIORITY_KEYS = ["priority", "priority_level"];
 const PAYMENT_KEYS = ["payment_type", "payment", "payment_method"];
@@ -363,6 +365,8 @@ export async function POST(request: NextRequest) {
       const contactDetails = pickFirst(cleanRow, CONTACT_KEYS);
       const trackingCode = pickFirst(cleanRow, TRACKING_KEYS) || createTrackingCode(i);
       const weightKg = parseNullableNumber(pickFirst(cleanRow, WEIGHT_KEYS));
+      const widthCm = parseNullableNumber(pickFirst(cleanRow, WIDTH_KEYS));
+      const heightCm = parseNullableNumber(pickFirst(cleanRow, HEIGHT_KEYS));
       const region = pickFirst(cleanRow, REGION_KEYS);
       const priority = pickFirst(cleanRow, PRIORITY_KEYS);
       const paymentType = pickFirst(cleanRow, PAYMENT_KEYS);
@@ -403,6 +407,8 @@ export async function POST(request: NextRequest) {
         latitude,
         longitude,
         weight_kg: weightKg,
+        width_cm: widthCm,
+        height_cm: heightCm,
         priority,
         payment_type: paymentType,
         status: assignToOrganization ? "acquired" : "unassigned",

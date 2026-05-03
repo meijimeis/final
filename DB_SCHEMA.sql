@@ -95,6 +95,8 @@ CREATE TABLE IF NOT EXISTS public.parcel_lists (
   latitude double precision CHECK (latitude IS NULL OR (latitude >= -90 AND latitude <= 90)),
   longitude double precision CHECK (longitude IS NULL OR (longitude >= -180 AND longitude <= 180)),
   weight_kg double precision,
+  width_cm double precision CHECK (width_cm IS NULL OR width_cm >= 0),
+  height_cm double precision CHECK (height_cm IS NULL OR height_cm >= 0),
   priority text,
   payment_type text,
   item_price numeric(14,2) DEFAULT 0 CHECK (item_price >= 0),

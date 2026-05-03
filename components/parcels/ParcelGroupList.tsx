@@ -11,12 +11,15 @@ type ParcelGroup = {
     tracking_code: string;
     address: string;
     weight_kg: number;
+    width_cm?: number | null;
+    height_cm?: number | null;
     lat: number;
     lng: number;
   }>;
   totalWeight: number;
   isUnderTarget: boolean;
   maxDistanceKm: number;
+  vehicleType?: "motorcycle" | "4w";
 };
 
 interface ParcelGroupListProps {
@@ -100,6 +103,9 @@ export default function ParcelGroupList({
                   <p className="text-xs text-gray-600">
                     {group.parcels.length} parcel(s) • {group.totalWeight.toFixed(1)} kg • spread {group.maxDistanceKm.toFixed(2)} km
                   </p>
+                  <p className="mt-1 text-[11px] font-medium text-gray-500">
+                    Vehicle: {group.vehicleType === "4w" ? "4-wheeler" : "Motorcycle"}
+                  </p>
                 </div>
 
                 <span className="rounded-full bg-gray-100 px-2 py-0.5 text-xs font-medium text-gray-700">
@@ -126,6 +132,10 @@ export default function ParcelGroupList({
                         {parcel.weight_kg.toFixed(1)} kg
                       </span>
                     </div>
+                    <p className="mt-1 text-[11px] text-gray-500">
+                      W {typeof parcel.width_cm === "number" ? `${parcel.width_cm.toFixed(1)} cm` : "-"} • H{" "}
+                      {typeof parcel.height_cm === "number" ? `${parcel.height_cm.toFixed(1)} cm` : "-"}
+                    </p>
                   </div>
                 ))}
               </div>

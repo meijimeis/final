@@ -14,6 +14,8 @@ type ParcelRow = {
   status?: string | null;
   payment_type?: string | null;
   weight_kg?: number | null;
+  width_cm?: number | null;
+  height_cm?: number | null;
   cluster_name?: string | null;
   latitude?: number | null;
   longitude?: number | null;
@@ -27,6 +29,8 @@ type SortKey =
   | "address"
   | "region"
   | "weight_kg"
+  | "width_cm"
+  | "height_cm"
   | "priority"
   | "payment_type"
   | "status"
@@ -139,7 +143,7 @@ export default function ParcelsTableTab() {
       const left = a[sortKey];
       const right = b[sortKey];
 
-      if (sortKey === "weight_kg") {
+      if (sortKey === "weight_kg" || sortKey === "width_cm" || sortKey === "height_cm") {
         const leftNum = typeof left === "number" ? left : 0;
         const rightNum = typeof right === "number" ? right : 0;
         return sortDirection === "asc" ? leftNum - rightNum : rightNum - leftNum;
@@ -269,7 +273,7 @@ export default function ParcelsTableTab() {
           ) : sortedRows.length === 0 ? (
             <div className="flex h-full items-center justify-center p-8 text-sm text-gray-600 text-center">No parcels matched your filter.</div>
           ) : (
-            <table className="w-full min-w-[1300px] text-sm">
+            <table className="w-full min-w-[1450px] text-sm">
               <thead className="bg-gray-50 border-b sticky top-0 z-10">
                 <tr>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("tracking_code")}>Tracking{sortArrow("tracking_code")}</th>
@@ -277,6 +281,8 @@ export default function ParcelsTableTab() {
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("address")}>Address{sortArrow("address")}</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("region")}>Region{sortArrow("region")}</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("weight_kg")}>Weight (kg){sortArrow("weight_kg")}</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("width_cm")}>Width (cm){sortArrow("width_cm")}</th>
+                  <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("height_cm")}>Height (cm){sortArrow("height_cm")}</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("priority")}>Priority{sortArrow("priority")}</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("payment_type")}>Payment{sortArrow("payment_type")}</th>
                   <th className="px-4 py-3 text-left font-semibold text-gray-700 cursor-pointer" onClick={() => toggleSort("status")}>Status{sortArrow("status")}</th>
@@ -300,6 +306,8 @@ export default function ParcelsTableTab() {
                       <td className="px-4 py-3 text-gray-700 max-w-[280px] truncate">{row.address || "-"}</td>
                       <td className="px-4 py-3 text-gray-700">{row.region || "-"}</td>
                       <td className="px-4 py-3 text-gray-700">{row.weight_kg ?? 0}</td>
+                      <td className="px-4 py-3 text-gray-700">{typeof row.width_cm === "number" ? row.width_cm.toFixed(1) : "-"}</td>
+                      <td className="px-4 py-3 text-gray-700">{typeof row.height_cm === "number" ? row.height_cm.toFixed(1) : "-"}</td>
                       <td className="px-4 py-3 text-gray-700">{row.priority || "normal"}</td>
                       <td className="px-4 py-3 text-gray-700">{row.payment_type || "-"}</td>
                       <td className="px-4 py-3">

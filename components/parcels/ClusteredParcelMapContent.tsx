@@ -112,6 +112,7 @@ export function ClusteredParcelMapContent({ groups, focusGroupId = null }: Clust
                     <div className="font-semibold">Cluster {group.label}</div>
                     <div>{group.parcels.length} parcels</div>
                     <div>{group.totalWeight.toFixed(1)} kg</div>
+                    <div>{group.vehicleType === "4w" ? "4-wheeler" : "Motorcycle"}</div>
                   </div>
                 </Popup>
               </Marker>
@@ -126,6 +127,13 @@ export function ClusteredParcelMapContent({ groups, focusGroupId = null }: Clust
                     <div className="text-sm">
                       <div className="font-semibold">{parcel.tracking_code}</div>
                       <div className="text-gray-700">{parcel.address}</div>
+                      <div className="text-gray-600 mt-1">
+                        {parcel.weight_kg.toFixed(1)} kg
+                        {" • W "}
+                        {typeof parcel.width_cm === "number" ? `${parcel.width_cm.toFixed(1)} cm` : "-"}
+                        {" • H "}
+                        {typeof parcel.height_cm === "number" ? `${parcel.height_cm.toFixed(1)} cm` : "-"}
+                      </div>
                       <div className="text-gray-600 mt-1">Cluster {group.label}</div>
                     </div>
                   </Popup>

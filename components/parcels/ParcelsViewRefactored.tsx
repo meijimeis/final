@@ -29,12 +29,12 @@ const VEHICLE_RULES = {
   motorcycle: {
     maxWeight: 100,
     maxHeight: 130,
-    maxWidth: 100
+    maxWidth: 100,
   },
   fourWheeler: {
     maxWeight: 1000,
     maxHeight: 1000,
-    maxWidth: 1000
+    maxWidth: 1000,
   },
 };
 
@@ -49,8 +49,8 @@ type Parcel = {
   cluster_name: string | null;
   lat: number | null;
   lng: number | null;
-  width_cm?: number;
-  height_cm?: number;
+  width_cm?: number | null;
+  height_cm?: number | null;
 };
 
 type ParcelGroup = ClusteredParcelMapGroup;
@@ -68,6 +68,8 @@ type ParcelDataRow = {
   longitude: number | null;
   lat: number | null;
   lng: number | null;
+  width_cm: number | null;
+  height_cm: number | null;
 };
 
 type PersistableParcelRow = {
@@ -87,10 +89,10 @@ type GroupingSettings = {
   minParcels?: number;
   maxParcels: number;
   maxDistanceRadius: number;
-    // hidden system constraints
+  // hidden system constraints
   maxWeightKg?: number;
   maxHeightCm?: number;
-  maxWidthCM?: number;
+  maxWidthCm?: number;
 };
 
 type LatLngParcel = Parcel & {
@@ -107,6 +109,8 @@ type ParcelGroupOutput = {
     tracking_code: string;
     address: string;
     weight_kg: number;
+    width_cm?: number | null;
+    height_cm?: number | null;
     lat: number;
     lng: number;
   }>;
@@ -182,6 +186,10 @@ function getClusterLabel(index: number) {
 
 function sanitizeSettings(settings: GroupingSettings): GroupingSettings {
   return {
+    minParcels: Number.isFinite(settings.minParcels)
+      ? Math.max(0, Math.floor(settings.minParcels || 0))
+      : 0,
+
     maxParcels: Number.isFinite(settings.maxParcels)
       ? Math.max(0, Math.floor(settings.maxParcels))
       : 6,
@@ -189,6 +197,18 @@ function sanitizeSettings(settings: GroupingSettings): GroupingSettings {
     maxDistanceRadius: Number.isFinite(settings.maxDistanceRadius)
       ? Math.max(0, settings.maxDistanceRadius)
       : 3,
+
+    maxWeightKg: Number.isFinite(settings.maxWeightKg)
+      ? Math.max(0, settings.maxWeightKg || 0)
+      : undefined,
+
+    maxHeightCm: Number.isFinite(settings.maxHeightCm)
+      ? Math.max(0, settings.maxHeightCm || 0)
+      : undefined,
+
+    maxWidthCm: Number.isFinite(settings.maxWidthCm)
+      ? Math.max(0, settings.maxWidthCm || 0)
+      : undefined,
   };
 }
 
@@ -268,6 +288,9 @@ for (let i = 0; i < remaining.length; i++) {
     continue; // 🚫 skip if exceeds vehicle capacity
   }
 
+  if (settings.maxWidthCm && width > settings.maxWidthCm) continue;
+  if (settings.maxHeightCm && height > settings.maxHeightCm) continue;
+
   const hasSharedComponent = candidateComponentIds.some((componentId) =>
     sharedComponentIds.has(componentId)
   );
@@ -325,6 +348,8 @@ for (let i = 0; i < remaining.length; i++) {
         tracking_code: parcel.tracking_code,
         address: parcel.address,
         weight_kg: parcel.weight_kg,
+        width_cm: parcel.width_cm,
+        height_cm: parcel.height_cm,
         lat: parcel.lat,
         lng: parcel.lng,
       })),
@@ -377,6 +402,8 @@ export default function ParcelsViewRefactored() {
         cluster_name: p.cluster_name,
         lat: typeof p.latitude === "number" ? p.latitude : p.lat,
         lng: typeof p.longitude === "number" ? p.longitude : p.lng,
+        width_cm: typeof p.width_cm === "number" ? p.width_cm : null,
+        height_cm: typeof p.height_cm === "number" ? p.height_cm : null,
       }));
 
       setParcels(mapped);
@@ -433,46 +460,54 @@ export default function ParcelsViewRefactored() {
       return;
     }
 
-  const motorcycleParcels: Parcel[] = [];
-const fourWheelerParcels: Parcel[] = [];
+    const motorcycleParcels: Parcel[] = [];
+    const fourWheelerParcels: Parcel[] = [];
 
-parcels.forEach((parcel) => {
-  const width = parcel.width_cm || 0;
-  const height = parcel.height_cm || 0;
-  const weight = parcel.weight_kg || 0;
+    parcels.forEach((parcel) => {
+      const width = parcel.width_cm || 0;
+      const height = parcel.height_cm || 0;
+      const weight = parcel.weight_kg || 0;
 
-  const exceedsMotorcycle =
-    width > VEHICLE_RULES.motorcycle.maxWidth ||
-    height > VEHICLE_RULES.motorcycle.maxHeight ||
-    weight > VEHICLE_RULES.motorcycle.maxWeight;
+      const exceedsMotorcycle =
+        width > VEHICLE_RULES.motorcycle.maxWidth ||
+        height > VEHICLE_RULES.motorcycle.maxHeight ||
+        weight > VEHICLE_RULES.motorcycle.maxWeight;
 
-  if (exceedsMotorcycle) {
-    fourWheelerParcels.push(parcel);
-  } else {
-    motorcycleParcels.push(parcel);
-  }
-});
+      if (exceedsMotorcycle) {
+        fourWheelerParcels.push(parcel);
+      } else {
+        motorcycleParcels.push(parcel);
+      }
+    });
 
-// cluster separately
-const motorcycleClusters = buildDistanceClusters(
-  motorcycleParcels,
-  { ...settings, maxWeightKg: VEHICLE_RULES.motorcycle.maxWeight },
-  parcelComponentIdsById
-);
+    const motorcycleClusters = buildDistanceClusters(
+      motorcycleParcels,
+      {
+        ...settings,
+        maxWeightKg: VEHICLE_RULES.motorcycle.maxWeight,
+        maxWidthCm: VEHICLE_RULES.motorcycle.maxWidth,
+        maxHeightCm: VEHICLE_RULES.motorcycle.maxHeight,
+      },
+      parcelComponentIdsById
+    );
 
-const fourWheelerClusters = buildDistanceClusters(
-  fourWheelerParcels,
-  { ...settings, maxWeightKg: VEHICLE_RULES.fourWheeler.maxWeight },
-  parcelComponentIdsById
-);
+    const fourWheelerClusters = buildDistanceClusters(
+      fourWheelerParcels,
+      {
+        ...settings,
+        maxWeightKg: VEHICLE_RULES.fourWheeler.maxWeight,
+        maxWidthCm: VEHICLE_RULES.fourWheeler.maxWidth,
+        maxHeightCm: VEHICLE_RULES.fourWheeler.maxHeight,
+      },
+      parcelComponentIdsById
+    );
 
-// merge
-setGroups([
-  ...motorcycleClusters.map((c) => ({ ...c, vehicleType: "motorcycle" })),
-  ...fourWheelerClusters.map((c) => ({ ...c, vehicleType: "4w" })),
-]);
+    setGroups([
+      ...motorcycleClusters.map((cluster) => ({ ...cluster, vehicleType: "motorcycle" as const })),
+      ...fourWheelerClusters.map((cluster) => ({ ...cluster, vehicleType: "4w" as const })),
+    ]);
 
-setHasComputedPreview(true);
+    setHasComputedPreview(true);
   };
 
   const clusterReadyGroups = useMemo(
@@ -565,7 +600,7 @@ setHasComputedPreview(true);
   ]);
 
   const clusterDefinition =
-    "Set your limits, then click Auto Group Parcels to build a preview. A value of 0 disables that specific limit (optional). Nothing is saved automatically. Review the preview and use Confirm Clusterize only when you are ready to save those exact groups.";
+    "Set the minimum and maximum parcels per cluster, then click Auto Group Parcels to build a preview. Motorcycle capacity is checked automatically by total weight plus parcel width and height; parcels beyond those limits are separated for 4-wheelers. Nothing is saved until you confirm.";
 
   function buildClusterName(label: string, index: number, timestamp: string) {
     return `Cluster-${label}-${timestamp}-${String(index + 1).padStart(2, "0")}`;

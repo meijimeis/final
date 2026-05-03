@@ -1017,7 +1017,7 @@ export default function ParcelAcquisitionPage() {
                   Required column: address (or delivery_address/location). Recommended: latitude and longitude for the best map accuracy.
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Optional columns: tracking_code, recipient_name, weight_kg, region, priority, payment_type, cluster_name.
+                  Optional columns: tracking_code, recipient_name, weight_kg, width_cm, height_cm, region, priority, payment_type, cluster_name.
                   If coordinates are missing, addresses are geocoded with a Philippines bias before import.
                 </p>
                 <p className="text-xs text-gray-500 mt-1">

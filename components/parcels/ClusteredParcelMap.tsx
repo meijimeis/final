@@ -11,6 +11,8 @@ export type ClusteredParcelMapGroup = {
     tracking_code: string;
     address: string;
     weight_kg: number;
+    width_cm?: number | null;
+    height_cm?: number | null;
     lat: number;
     lng: number;
   }>;
@@ -21,6 +23,7 @@ export type ClusteredParcelMapGroup = {
   };
   isUnderTarget: boolean;
   maxDistanceKm: number;
+  vehicleType?: "motorcycle" | "4w";
 };
 
 type ClusteredParcelMapProps = {
