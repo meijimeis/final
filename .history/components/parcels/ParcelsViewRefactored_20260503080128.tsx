@@ -654,6 +654,7 @@ const recomputeClusters = () => {
     } finally {
       setIsConfirming(false);
     }
+  };
 
   return (
     <div className="grid h-full min-h-[520px] grid-cols-[400px_1fr_520px] gap-4">
