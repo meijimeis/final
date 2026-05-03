@@ -4675,6 +4675,23 @@ export const assignParcelClusterToRider = async (parcelListId, riderId, organiza
       throw new Error('Rider not found or does not belong to your organization');
     }
 
+    const todayStart = new Date();
+    todayStart.setHours(0, 0, 0, 0);
+    const { count: existingRouteCount, error: existingRouteError } = await supabase
+      .from('routes')
+      .select('id', { count: 'exact', head: true })
+      .eq('rider_id', riderId)
+      .in('status', ['assigned', 'active', 'in_progress'])
+      .gte('created_at', todayStart.toISOString());
+
+    if (existingRouteError) {
+      throw new Error(`Failed to check rider route availability: ${existingRouteError.message}`);
+    }
+
+    if (Number(existingRouteCount || 0) > 0) {
+      throw new Error('This rider already has a route assigned today. Each rider can take one cluster per day.');
+    }
+
     // Get all explicit cluster members from parcel_list_items
     const { data: items, error: itemsError } = await supabase
       .from('parcel_list_items')
