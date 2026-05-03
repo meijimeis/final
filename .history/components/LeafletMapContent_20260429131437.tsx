@@ -136,13 +136,13 @@ function MapViewportController({ center }: { center: [number, number] }) {
 function buildRiderIcon() {
   return L.divIcon({
     className: "",
-      html: `
-      <div class="plan-route-rider-wrapper">
-        <img src="/images/scooter.png" class="plan-route-rider-img"/>
+    html: `
+      <div class="rider-icon-wrapper">
+        <img src="/images/scooter.png" class="rider-icon"/>
       </div>
     `,
-  iconSize: [38, 38],
-iconAnchor: [19, 19],
+    iconSize: [40, 40],
+    iconAnchor: [20, 20],
   });
 }
 
