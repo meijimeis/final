@@ -598,7 +598,7 @@ export default function ParcelsViewRefactored() {
   ]);
 
   const clusterDefinition =
-    "Set the minimum and maximum parcels per cluster, then click Auto Group Parcels to build a preview. Motorcycle capacity is checked automatically by total weight plus parcel width and height; parcels beyond those limits are separated for 4-wheelers. Nothing is saved until you confirm.";
+    "Set the minimum parcels, maximum parcels, and distance radius per cluster, then click Auto Group Parcels to build a preview. Motorcycle capacity is checked automatically by total weight plus parcel width and height; parcels beyond those limits are separated for 4-wheelers. Nothing is saved until you confirm.";
 
   function buildClusterName(label: string, index: number, timestamp: string) {
     return `Cluster-${label}-${timestamp}-${String(index + 1).padStart(2, "0")}`;

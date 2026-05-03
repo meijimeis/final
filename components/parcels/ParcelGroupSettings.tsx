@@ -86,6 +86,21 @@ export default function ParcelGroupSettings({
           <p className="mt-1 text-[11px] text-gray-500">Set 0 to remove the max-parcel limit.</p>
         </div>
 
+        {/* Max Distance Radius */}
+        <div>
+          <label className="block text-xs font-medium text-gray-700 mb-2">
+            Max Distance Radius (km)
+          </label>
+          <input
+            type="number"
+            min={0}
+            value={settings.maxDistanceRadius}
+            onChange={(e) => handleChange("maxDistanceRadius", Number(e.target.value))}
+            className="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-purple-500"
+          />
+          <p className="mt-1 text-[11px] text-gray-500">Set 0 to disable the distance-radius limit.</p>
+        </div>
+
         {/* Auto Group Button */}
         <button
           onClick={onAutoGroup}
