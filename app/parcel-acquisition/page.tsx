@@ -1,5 +1,7 @@
 "use client";
 
+import { clusterPoints, createCircleZone, getAutoGeofenceConfig } from "@/lib/autogeofence";
+import { createGeofence } from "@/lib/api";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Papa from "papaparse";
 import {
@@ -13,6 +15,40 @@ import {
   importParcelCsvRows,
 } from "@/lib/api";
 import { supabase } from "@/lib/supabaseClient";
+
+async function deleteAllGeofences() {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+
+  const { data: supervisor, error: supError } = await supabase
+    .from("supervisors")
+    .select("organization_id")
+    .eq("profile_id", user?.id)
+    .single();
+
+  if (supError || !supervisor?.organization_id) {
+    throw new Error("No organization_id found for user");
+  }
+
+  const orgId = supervisor.organization_id;
+
+  console.log("Deleting geofences for org:", orgId);
+
+  const { data, error } = await supabase
+    .from("geofences")
+    .delete()
+    .eq("organization_id", orgId)
+    .select(); // 👈 VERY IMPORTANT
+
+  if (error) {
+    console.error("❌ Failed to delete geofences:", error);
+    throw error;
+  }
+
+  console.log("🗑️ Deleted rows:", data?.length || 0);
+}
+
 import {
   buildGeofenceRuntime,
   isPointInsideGeofences,
@@ -33,6 +69,46 @@ import {
   Upload,
   X,
 } from "lucide-react";
+
+async function waitForGeocoding(ids: string[] = [], maxAttempts = 15, delayMs = 3000) {
+  for (let i = 0; i < maxAttempts; i++) {
+    const allUnacquired = await getUnacquiredIndividualParcels();
+    let targetRows = allUnacquired;
+    
+    // If specific IDs provided, filter to them
+    if (ids.length > 0) {
+      targetRows = allUnacquired.filter((r: any) => ids.includes(r.id));
+    } else {
+      // Otherwise get recently created ones (last 5 minutes)
+      const fiveMinsAgo = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+      targetRows = allUnacquired.filter((r: any) => 
+        new Date(r.created_at || "1970-01-01") > new Date(fiveMinsAgo)
+      );
+    }
+
+    const withCoords = targetRows.filter(
+      (r: any) => r.latitude != null && r.longitude != null && 
+                 Number.isFinite(r.latitude) && Number.isFinite(r.longitude)
+    );
+
+    console.log(`Geocoding check ${i + 1}/${maxAttempts}: ${withCoords.length}/${targetRows.length} geocoded`);
+
+    if (withCoords.length === targetRows.length && targetRows.length > 0) {
+      console.log("✅ All parcels geocoded successfully");
+      return withCoords;
+    }
+
+    await new Promise(res => setTimeout(res, delayMs));
+  }
+
+  console.warn("⏰ Geocoding timeout - some parcels may still be processing");
+  return []; // Return empty rather than undefined
+}
+
+type Point = {
+  lat: number;
+  lng: number;
+};
 
 type ParcelRow = {
   id: string;
@@ -320,8 +396,9 @@ export default function ParcelAcquisitionPage() {
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [acquiring, setAcquiring] = useState(false);
   const [importingCsv, setImportingCsv] = useState(false);
+  const [importStep, setImportStep] = useState<"idle" | "importing" | "geocoding" | "geofencing">("idle");
   const [showConfirmModal, setShowConfirmModal] = useState(false);
-  const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [message, setMessage] = useState<{ type: "success" | "error" | "warning"; text: string } | null>(null);
   const [csvImportSummary, setCsvImportSummary] = useState<CsvImportSummary | null>(null);
   const [csvImportFileName, setCsvImportFileName] = useState<string | null>(null);
   const [pendingCsvRows, setPendingCsvRows] = useState<CsvRawRow[]>([]);
@@ -587,19 +664,211 @@ export default function ParcelAcquisitionPage() {
     initialize();
   }, [verifySupervisorAccess, loadIndividualPage, loadClusterPage, loadLogsPage]);
 
-  const handleRefresh = async () => {
-    if (!hasSupervisorAccess) return;
+const handleRefresh = async () => {
+  if (!hasSupervisorAccess) return;
 
-    if (activeTab === "individual") {
-      await Promise.all([loadIndividualPage(individualPage), loadLogsPage(logsPage)]);
+  if (activeTab === "individual") {
+    await Promise.all([
+      loadIndividualPage(individualPage),
+      loadLogsPage(logsPage),
+    ]);
+
+
+    await handleAutoGeofence();
+
+    return;
+  }
+
+  await Promise.all([
+    loadClusterPage(clusterPage),
+    loadLogsPage(logsPage),
+  ]);
+};
+
+function isDuplicateZone(newCenter: any, existingGeofences: any[]) {
+  return existingGeofences.some((g: any) => {
+    const center = g?.rules?.center;
+    if (!center) return false;
+
+    const distance =
+      Math.sqrt(
+        Math.pow(center.lat - newCenter.lat, 2) +
+        Math.pow(center.lng - newCenter.lng, 2)
+      );
+
+    return distance < 0.001; // ~100m tolerance
+  });
+}
+
+function getCenter(points: Point[]) {
+  const lat = points.reduce((sum, p) => sum + p.lat, 0) / points.length;
+  const lng = points.reduce((sum, p) => sum + p.lng, 0) / points.length;
+  return { lat, lng };
+}
+
+function getDistanceMeters(a: Point, b: Point) {
+  const R = 6371000; // Earth radius in meters
+
+  const dLat = (b.lat - a.lat) * Math.PI / 180;
+  const dLng = (b.lng - a.lng) * Math.PI / 180;
+
+  const lat1 = a.lat * Math.PI / 180;
+  const lat2 = b.lat * Math.PI / 180;
+
+  const x =
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.sin(dLng / 2) * Math.sin(dLng / 2) *
+    Math.cos(lat1) * Math.cos(lat2);
+
+  const c = 2 * Math.atan2(Math.sqrt(x), Math.sqrt(1 - x));
+
+  return R * c;
+}
+
+function mergeNearbyClusters(clusters: Point[][], thresholdMeters = 800): Point[][] {
+  let merged = [...clusters];
+  let changed = true;
+
+  while (changed) {
+    changed = false;
+    const result: Point[][] = [];
+
+    for (const cluster of merged) {
+      let mergedIntoExisting = false;
+
+      for (const existing of result) {
+        const centerA = getCenter(cluster);
+        const centerB = getCenter(existing);
+
+        const distance = getDistanceMeters(centerA, centerB);
+
+        if (distance < thresholdMeters) {
+          existing.push(...cluster); // 🔥 merge
+          mergedIntoExisting = true;
+          changed = true;
+          break;
+        }
+      }
+
+      if (!mergedIntoExisting) {
+        result.push([...cluster]);
+      }
+    }
+
+    merged = result;
+  }
+
+  return merged;
+}
+
+const handleAutoGeofence = async () => {
+  try {
+    setImportingCsv(true);
+
+    // 🔥 DELETE ALL OLD GEOFENCES FIRST
+    await deleteAllGeofences();
+
+    const { data: parcels } = await supabase
+      .from("parcel_lists")
+      .select("latitude, longitude, created_at") // also fix performance here
+      .not("latitude", "is", null)
+      .not("longitude", "is", null)
+      .order("created_at", { ascending: false })
+      .limit(2000);
+
+    // TEMP DEBUG: remove filtering issue
+    console.log("Fetched parcels:", parcels);
+
+      const safeParcels = parcels ?? [];
+
+      if (safeParcels.length === 0) { 
+      setMessage({ type: "error", text: "No geocoded parcels yet" });
       return;
     }
 
-    await Promise.all([loadClusterPage(clusterPage), loadLogsPage(logsPage)]);
-  };
+    const points = safeParcels
+      .map((p: any) => ({
+        lat: p.latitude,
+        lng: p.longitude,
+      }))
+      .filter((p) => p.lat != null && p.lng != null);
 
+    const rawClusters = clusterPoints(points);
+
+    // 🔥 NEW: merge overlapping clusters
+    const clusters = mergeNearbyClusters(rawClusters, 1500);
+
+          // 🔥 GET CURRENT USER ORG FIRST
+          const {
+            data: { user },
+          } = await supabase.auth.getUser();
+
+          const { data: supervisor } = await supabase
+            .from("supervisors")
+            .select("organization_id")
+            .eq("profile_id", user?.id)
+            .single();
+            
+    if (!supervisor?.organization_id) {
+      throw new Error("No organization_id found for user");
+    }
+
+    const orgId = supervisor.organization_id;
+
+    const results = await Promise.all(
+      clusters.map(async (cluster) => {
+        try {
+          const zone = createCircleZone(cluster);
+          if (!zone) return null;
+
+          // THEN USE IT HERE
+          return await createGeofence({
+            name: `Auto • ${zone.parcelCount} parcels`,
+            organization_id: orgId,
+            zone_type: "DELIVERY",
+            severity: "info",
+            is_active: true,
+            allow_exit: true,
+            required_entry: false,
+            max_dwell_minutes: 30,
+            geometry: zone.geometry,
+            rules: {
+              source: "auto",
+              center: zone.center,
+              circle_radius_meters: zone.radiusMeters,
+              parcel_count: zone.parcelCount,
+            },
+          });
+        } catch (err) {
+          console.error("❌ Failed cluster:", err);
+          return null;
+        }
+      })
+    );
+
+    const created = results.filter(r => r?.success).length;
+
+    setMessage({
+      type: "success",
+      text: `✅ Created ${created} geofences from ${points.length} parcels`,
+    });
+
+  } catch (err) {
+    console.error(err);
+    setMessage({ type: "error", text: "Auto-geofence failed" });
+  } finally {
+    setImportingCsv(false);
+  }
+};
+  
   const openCsvPicker = () => {
     csvInputRef.current?.click();
+  };
+
+  const handleCancelCsvImport = () => {
+    setShowCsvConfirmModal(false);
+    setPendingCsvRows([]);
+    setPendingCsvPreview(null);
   };
 
   const handleCsvFileChange = async (event: React.ChangeEvent<HTMLInputElement>) => {
@@ -613,6 +882,7 @@ export default function ParcelAcquisitionPage() {
     setPendingCsvRows([]);
     setPendingCsvPreview(null);
     setImportingCsv(true);
+    setImportStep("importing");
 
     try {
       const rows = await parseCsvFile(file);
@@ -641,119 +911,129 @@ export default function ParcelAcquisitionPage() {
     }
   };
 
-  const handleCancelCsvImport = () => {
+const handleConfirmCsvImport = async () => {
+  if (pendingCsvRows.length === 0) {
     setShowCsvConfirmModal(false);
-    setPendingCsvRows([]);
-    setPendingCsvPreview(null);
-  };
+    return;
+  }
 
-  const handleConfirmCsvImport = async () => {
-    if (pendingCsvRows.length === 0) {
-      setShowCsvConfirmModal(false);
+  setImportingCsv(true);
+  setMessage(null);
+
+  try {
+    // 1. Import CSV
+    const result = await importParcelCsvRows(pendingCsvRows, { assignToOrganization: true });
+    const summary = (result.summary || null) as CsvImportSummary | null;
+    
+    if (summary) {
+      setCsvImportSummary(summary);
+    }
+
+    if (!result.success) {
+      setMessage({ type: "error", text: result.error || "Failed to import CSV rows." });
       return;
     }
 
-    setImportingCsv(true);
-    setMessage(null);
+    // 2. Logs (keep this BEFORE geofence)
+    const insertedCount = summary?.insertedCount || 0;
+    const insertedIndividualRowsCount = summary?.insertedIndividualRowsCount || 0;
+    const insertedClusteredRowsCount = summary?.insertedClusteredRowsCount || 0;
+    const importedClusterCount = summary?.importedClusterCount || 0;
 
-    try {
-      const result = await importParcelCsvRows(pendingCsvRows, { assignToOrganization: true });
-      const summary = (result.summary || null) as CsvImportSummary | null;
-
-      if (summary) {
-        setCsvImportSummary(summary);
-      }
-
-      if (!result.success) {
-        setMessage({
-          type: "error",
-          text: result.error || "Failed to import CSV rows.",
-        });
-        return;
-      }
-
-      const insertedCount = summary?.insertedCount || 0;
-      const insertedIndividualRowsCount = summary?.insertedIndividualRowsCount || 0;
-      const insertedClusteredRowsCount = summary?.insertedClusteredRowsCount || 0;
-      const importedClusterCount = summary?.importedClusterCount || 0;
-
-      if (insertedIndividualRowsCount > 0) {
-        const logResult = await createParcelAcquisitionLog({
-          acquisitionType: "individual",
-          selectedItemCount: insertedIndividualRowsCount,
-          acquiredParcelCount: insertedIndividualRowsCount,
-          acquiredClusterCount: 0,
-          details: {
-            source: "csv-import",
-            fileName: csvImportFileName,
-          },
-        });
-
-        if (!logResult.success) {
-          console.warn("CSV import completed but individual audit log failed:", logResult.error);
-        }
-      }
-
-      if (importedClusterCount > 0) {
-        const logResult = await createParcelAcquisitionLog({
-          acquisitionType: "cluster",
-          selectedItemCount: importedClusterCount,
-          acquiredParcelCount: insertedClusteredRowsCount,
-          acquiredClusterCount: importedClusterCount,
-          details: {
-            source: "csv-import",
-            fileName: csvImportFileName,
-          },
-        });
-
-        if (!logResult.success) {
-          console.warn("CSV import completed but cluster audit log failed:", logResult.error);
-        }
-      }
-
-      const skippedSuffix =
-        summary && summary.skippedCount > 0
-          ? ` Skipped ${summary.skippedCount} row(s).`
-          : "";
-
-      const geocodeSuffix = summary
-        ? ` Geocoded ${summary.geocodedCount} row(s).`
-        : "";
-
-      const clusterSuffix =
-        importedClusterCount > 0
-          ? ` Imported ${importedClusterCount} cluster(s) with ${insertedClusteredRowsCount} clustered parcel row(s).`
-          : "";
-
-      const organizationSuffix =
-        summary?.assignedToOrganization
-          ? " Imported rows are now under your organization."
-          : "";
-
-      setMessage({
-        type: "success",
-        text:
-          `CSV import completed. Inserted ${insertedCount} row(s), including ${insertedIndividualRowsCount} individual parcel row(s).` +
-          `${clusterSuffix}${geocodeSuffix}${skippedSuffix}${organizationSuffix}`,
+    if (insertedIndividualRowsCount > 0) {
+      await createParcelAcquisitionLog({
+        acquisitionType: "individual",
+        selectedItemCount: insertedIndividualRowsCount,
+        acquiredParcelCount: insertedIndividualRowsCount,
+        acquiredClusterCount: 0,
+        details: { source: "csv-import", fileName: csvImportFileName },
       });
-
-      setShowCsvConfirmModal(false);
-      setPendingCsvRows([]);
-      setPendingCsvPreview(null);
-      setSelectedParcelIds(new Set());
-      setSelectedClusterNames(new Set());
-
-      await Promise.all([loadIndividualPage(1), loadClusterPage(1), loadLogsPage(1)]);
-    } catch (error) {
-      console.error("CSV import confirmation failed:", error);
-      setMessage({
-        type: "error",
-        text: error instanceof Error ? error.message : "Failed to import CSV rows.",
-      });
-    } finally {
-      setImportingCsv(false);
     }
-  };
+
+    if (importedClusterCount > 0) {
+      await createParcelAcquisitionLog({
+        acquisitionType: "cluster",
+        selectedItemCount: importedClusterCount,
+        acquiredParcelCount: insertedClusteredRowsCount,
+        acquiredClusterCount: importedClusterCount,
+        details: { source: "csv-import", fileName: csvImportFileName },
+      });
+    }
+
+    // 🔥 3. AUTO GEOFENCE
+    console.log("🔥 Starting autogeofence...");
+
+    const csvPoints: Point[] = pendingCsvRows
+      .map(row => {
+        const cleanRow = toNormalizedCsvRow(row);
+        const lat = toFiniteCoordinate(cleanRow.latitude) ?? toFiniteCoordinate(cleanRow.lat);
+        const lng = toFiniteCoordinate(cleanRow.longitude) ?? toFiniteCoordinate(cleanRow.lng);
+        return lat != null && lng != null ? { lat, lng } : null;
+      })
+      .filter((p): p is Point => p !== null);
+
+    let points: Point[] = [];
+
+    if (csvPoints.length === pendingCsvRows.length) {
+      console.log("✅ Using CSV coordinates");
+      points = csvPoints;
+    } else {
+      console.log("⏳ Waiting for geocoding...");
+      setImportStep("geocoding");
+      let newParcels = await waitForGeocoding(
+        [], // ✅ REMOVE fake IDs
+        15,
+        3000
+      );
+
+      // 🔥 ADD RETRY (VERY IMPORTANT)
+      if (newParcels.length === 0) {
+        console.log("🔁 Retrying geocoding in 10 seconds...");
+
+        await new Promise(res => setTimeout(res, 10000));
+
+        newParcels = await waitForGeocoding([], 10, 3000);
+      }
+
+      points = newParcels
+        .map((row: any) => {
+          const lat = toFiniteCoordinate(row.latitude);
+          const lng = toFiniteCoordinate(row.longitude);
+          return lat != null && lng != null ? { lat, lng } : null;
+        })
+        .filter((p): p is Point => p !== null);
+    }
+
+    let successMessage = `CSV imported! Inserted ${insertedCount}`;
+
+    setImportStep("geofencing");
+
+    console.log("🚀 Running auto-geofence...");
+    await handleAutoGeofence();
+
+    if (points.length > 0) {
+      successMessage += " → Geofences regenerated";
+    } else {
+      successMessage += " → Geofence triggered (waiting for geocoded parcels)";
+    }
+
+    setMessage({ type: "success", text: successMessage });
+
+    // reset
+    setShowCsvConfirmModal(false);
+    setPendingCsvRows([]);
+    setPendingCsvPreview(null);
+
+    await Promise.all([loadIndividualPage(1), loadClusterPage(1), loadLogsPage(1)]);
+
+  } catch (error) {
+    console.error(error);
+    setMessage({ type: "error", text: "Import failed" });
+  } finally {
+  setImportingCsv(false);
+  setImportStep("idle");
+}
+};
 
   const selectedParcelRows = useMemo(
     () => individualRows.filter((row) => selectedParcelIds.has(row.id)),
@@ -993,8 +1273,10 @@ export default function ParcelAcquisitionPage() {
           <div
             className={`mb-3 p-4 rounded-lg border ${
               message.type === "success"
-                ? "bg-green-50 border-green-200 text-green-800"
-                : "bg-red-50 border-red-200 text-red-800"
+            ? "bg-green-50 border-green-200 text-green-800"
+            : message.type === "warning"
+            ? "bg-yellow-50 border-yellow-200 text-yellow-800"
+            : "bg-red-50 border-red-200 text-red-800"
             }`}
           >
             <p className="font-medium">{message.text}</p>
@@ -1017,7 +1299,7 @@ export default function ParcelAcquisitionPage() {
                   Required column: address (or delivery_address/location). Recommended: latitude and longitude for the best map accuracy.
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
-                  Optional columns: tracking_code, recipient_name, weight_kg, width_cm, height_cm, region, priority, payment_type, cluster_name.
+                  Optional columns: tracking_code, recipient_name, weight_kg, region, priority, payment_type, cluster_name.
                   If coordinates are missing, addresses are geocoded with a Philippines bias before import.
                 </p>
                 <p className="text-xs text-gray-500 mt-1">
@@ -1041,7 +1323,15 @@ export default function ParcelAcquisitionPage() {
                 className="px-15 py-5 mr-8 rounded-lg bg-purple-600 text-white hover:bg-purple-700 disabled:opacity-50 disabled:cursor-not-allowed hover:cursor-pointer inline-flex items-center gap-2"
               >
                 {importingCsv ? <Loader className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                {importingCsv ? "Processing CSV..." : "Upload CSV"}
+                {importingCsv
+                  ? importStep === "importing"
+                    ? "Importing CSV..."
+                    : importStep === "geocoding"
+                    ? "Geocoding..."
+                    : importStep === "geofencing"
+                    ? "Creating geofences..."
+                    : "Processing..."
+                  : "Upload CSV"}
               </button>
 
               {csvImportFileName ? (
@@ -1158,6 +1448,13 @@ export default function ParcelAcquisitionPage() {
             >
               <RefreshCcw className="w-4 h-4" />
               Refresh
+            </button>
+
+            <button
+              onClick={handleAutoGeofence}
+              className="px-3 py-2 rounded-lg border text-sm text-gray-700 hover:bg-gray-50"
+            >
+              Run Auto-Geofence
             </button>
 
             <button
