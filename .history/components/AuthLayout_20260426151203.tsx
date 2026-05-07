@@ -13,7 +13,7 @@ export default function AuthLayout({
       <div className="hidden lg:flex w-1/2 bg-indigo-600 text-white items-center justify-center">
         <div className="max-w-md text-center px-10">
           <h1 className="text-3xl font-bold mb-2">
-            Welcome to Routemate+ Platform
+            Welcome to the Delivery Platform
           </h1>
           <p className="text-indigo-100 mb-10">
             Intelligent Route Optimization for Delivery Riders
